@@ -34,6 +34,7 @@
 #include "native/archive_picker.h"
 #include "native/imgui_renderer.h"
 #include "native/preferences.h"
+#include "native/localization.h"
 #include "native/frame_pacing.h"
 #include "native/camera.h"
 #include "native/folder_picker.h"
@@ -127,19 +128,22 @@ void simplify_dock_tabs(ImGuiDockNode *node) {
         simplify_dock_tabs(child);
 }
 int workspace_selector(int selected, float reserved_width) {
-    const char *names[] = {"Maps",    "Models", "Studio", "Authoring", "Collision",
-                           "Cameras", "Images", "Audio",  "Warp Ride"};
+    const char *names[] = {"Maps", "Models", "Studio", "Authoring", "Collision",
+                           "Cameras", "Images", "Audio", "Warp Ride"};
+    const char *translated[9];
+    for (int i = 0; i < 9; ++i)
+        translated[i] = studio::localization::tr(names[i]);
     const auto &style = ImGui::GetStyle();
     float available = ImGui::GetWindowWidth() - reserved_width - style.WindowPadding.x * 2;
     if (available < ImGui::GetFontSize() * 54 + style.ItemSpacing.x * 8) {
         ImGui::SetNextItemWidth(std::max(
             80.f, std::min(ImGui::GetFontSize() * 14, available - style.ItemSpacing.x * 2)));
-        bool open = ImGui::BeginCombo("##workspace-navigation", names[selected]);
+        bool open = ImGui::BeginCombo("##workspace-navigation", translated[selected]);
         if (!open)
             studio::TutorialWidgets::item("main", "Workspace");
         if (open) {
             for (int i = 0; i < 9; ++i)
-                if (ImGui::Selectable(names[i], selected == i))
+                if (ImGui::Selectable(translated[i], selected == i))
                     selected = i;
             ImGui::EndCombo();
         }
@@ -155,7 +159,7 @@ int workspace_selector(int selected, float reserved_width) {
                               active ? ImVec4(.16f, .43f, .60f, 1) : ImVec4(.14f, .22f, .28f, 1));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(.23f, .49f, .65f, 1));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(.12f, .34f, .48f, 1));
-        if (studio::TutorialWidgets::Button("main", names[i], {ImGui::GetFontSize() * 6, 0}))
+        if (studio::TutorialWidgets::Button("main", translated[i], {ImGui::GetFontSize() * 6, 0}))
             selected = i;
         if (active) {
             auto low = ImGui::GetItemRectMin(), high = ImGui::GetItemRectMax();
@@ -268,6 +272,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
     studio::Preferences preferences(preference_root.empty() ? std::filesystem::path{}
                                                             : preference_root / "preferences.cfg");
     SDL_free(pref_path);
+    studio::localization::set_language(preferences.get("language"));
     studio::FramePacing pacing;
     auto saved_flag = [&](const char *key, bool fallback) {
         auto value = preferences.get(key);
@@ -1386,7 +1391,23 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             }
             ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x * 2,
                                           ImGui::GetWindowWidth() - menu_width));
-            if (ImGui::BeginMenu("View")) {
+            // Persist the selected interface language in preferences.cfg.
+            if (ImGui::BeginMenu(studio::localization::tr("Language"))) {
+                if (ImGui::MenuItem("English", nullptr,
+                                   studio::localization::current == studio::localization::Language::English)) {
+                    studio::localization::set_language("en");
+                    preferences.set("language", "en");
+                    preferences.save();
+                }
+                if (ImGui::MenuItem("Français", nullptr,
+                                   studio::localization::current == studio::localization::Language::French)) {
+                    studio::localization::set_language("fr");
+                    preferences.set("language", "fr");
+                    preferences.save();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(studio::localization::tr("View"))) {
                 if (studio::TutorialWidgets::MenuItem("main", "3DS preview (400 x 240)", nullptr,
                                                       &studio::ImGuiRenderer::preview_3ds)) {
                     preferences.set("preview_3ds", studio::ImGuiRenderer::preview_3ds ? "1" : "0");
@@ -1407,7 +1428,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     reset_layout = true;
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Project")) {
+            if (ImGui::BeginMenu(studio::localization::tr("Project"))) {
                 projects.menu(area);
                 conversation_editor.menu(preferences);
                 ImGui::EndMenu();
