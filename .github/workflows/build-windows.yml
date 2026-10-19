@@ -1,0 +1,51 @@
+name: Build USUM Studio for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - "resources/**"
+      - "icon/**"
+      - ".github/workflows/build-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Get sources
+        uses: actions/checkout@v4
+
+      - name: Enable MSVC compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download pinned dependencies
+        run: cmake -P cmake/DownloadDependencies.cmake
+
+      - name: Configure graphics libraries
+        run: cmake -S dependencies/source -B dependencies/graphics -G Ninja -DCMAKE_BUILD_TYPE=Release -DBGFX_BUILD_EXAMPLES=OFF -DBGFX_WITH_WAYLAND=OFF
+
+      - name: Build graphics libraries
+        run: cmake --build dependencies/graphics --target bgfx bimg bx shaderc --parallel 4
+
+      - name: Configure USUM Studio
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTUDIO_GRAPHICS_SOURCE=dependencies/source -DSTUDIO_GRAPHICS_BUILD=dependencies/graphics -DSTUDIO_IMGUI_SOURCE=dependencies/imgui -DSDL3_DIR=dependencies/SDL3-3.4.16/cmake
+
+      - name: Build USUM Studio
+        run: cmake --build build --target usum-viewport --parallel 4
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: USUM-Studio-Windows
+          path: build/bin/
+          if-no-files-found: error
