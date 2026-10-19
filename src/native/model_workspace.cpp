@@ -8,6 +8,7 @@
 #include "native/cry_editor.h"
 #include "native/theme.h"
 #include "native/model_workspace.h"
+#include "native/localization.h"
 #include "native/imgui_renderer.h"
 #include <SDL3/SDL.h>
 #include <bx/math.h>
@@ -353,14 +354,17 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
             }
         }
     }
-    ImGui::Begin("Model browser");
+    ImGui::Begin(studio::localization::tr("Model browser"));
     static const char *categories[] = {
         "Pokemon",       "Battle characters", "Field characters & props", "Poke Balls",
         "Battle props",  "Poke Beans",        "Battle arena parts",       "Clothing",
         "Battle effects"};
+    const char *translated_categories[9];
+    for (int i = 0; i < 9; ++i)
+        translated_categories[i] = studio::localization::tr(categories[i]);
     ImGui::BeginDisabled(busy || library_dialog_category_ >= 0 || clothing_dialog_slot_ >= 0);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##model-category", &category_, categories, 9)) {
+    if (ImGui::Combo("##model-category", &category_, [](void *data, int index, const char **out) { *out = static_cast<const char **>(data)[index]; return true; }, translated_categories, 9)) {
         chosen_ = -1;
         search_[0] = 0;
         error_.clear();
@@ -386,16 +390,16 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
                   : archives.resolve(std::filesystem::u8path(dump), TargetProfile::pokemon_archive);
     if (category_ && source.empty())
         source = dump_ / model_category_archive(ModelCategory(category_ - 1));
-    if (ImGui::SmallButton("Library options"))
+    if (ImGui::SmallButton(studio::localization::tr("Library options")))
         ImGui::OpenPopup("Model library options");
     if (ImGui::BeginPopup("Model library options")) {
-        if (!project_store() && !category_ && ImGui::Button("Choose source archive")) {
+        if (!project_store() && !category_ && ImGui::Button(studio::localization::tr("Choose source archive"))) {
             inspector_page_ = "Source";
             ImGui::CloseCurrentPopup();
         }
         ImGui::TextWrapped("%s", source.string().c_str());
         ImGui::BeginDisabled(busy || library_dialog_category_ >= 0 || (!*dump && !category_));
-        if (studio::TutorialWidgets::Button("model_workspace", "Refresh catalog")) {
+        if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Refresh catalog"))) {
             if (category_)
                 refresh_library();
             else
@@ -405,12 +409,12 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
         if (category_) {
             ImGui::SameLine();
             if (!project_store() &&
-                studio::TutorialWidgets::Button("model_workspace", "External GARC...")) {
+                studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("External GARC..."))) {
                 library_dialog_category_ = category_ - 1;
                 choose_archive(window_, library_dialog_, source.string().c_str());
             }
             if (!project_store() && !library_archives_[category_ - 1].empty() &&
-                studio::TutorialWidgets::Button("model_workspace", "Use dump archive")) {
+                studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Use dump archive"))) {
                 library_archives_[category_ - 1].clear();
                 refresh_library();
                 busy = true;
@@ -421,7 +425,7 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
     }
     if (job_.valid() || library_job_.valid()) {
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("model_workspace", "Cancel"))
+        if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Cancel")))
             cancel_ = true;
     }
     if (busy)
@@ -430,8 +434,8 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
         ImGui::TextWrapped("%s", error_.c_str());
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##model-search",
-                             category_ ? "Search resource name or member"
-                                       : "Search name, species number or form",
+                             category_ ? studio::localization::tr("Search resource name or member")
+                                       : studio::localization::tr("Search name, species number or form"),
                              search_, sizeof(search_));
     auto open_selected = [&] {
         if (category_)
@@ -442,7 +446,7 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
     auto count = category_ ? library_.size() : catalog_.size();
     ImGui::BeginDisabled(busy || stale || library_dialog_category_ >= 0);
     if (!category_ &&
-        studio::TutorialWidgets::Checkbox("model_workspace", "Shiny textures", &shiny_) &&
+        studio::TutorialWidgets::Checkbox("model_workspace", studio::localization::tr("Shiny textures"), &shiny_) &&
         chosen_ >= 0 && std::size_t(chosen_) < count)
         open_selected();
     ImGui::EndDisabled();
@@ -459,9 +463,9 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
             matches.push_back(int(i));
     if (matches.empty() && !busy)
         ImGui::TextWrapped("%s",
-                           count ? "No matching models."
+                           count ? studio::localization::tr("No matching models.")
                            : !error_.empty() ? error_.c_str()
-                                 : "No models found for this category. Check the source archive.");
+                                 : studio::localization::tr("No models found for this category. Check the source archive."));
     // Navigate the visible (filtered) model list with the Up/Down arrow keys.
     // Only react while the list itself has keyboard focus, so the search field
     // and other controls retain their normal keyboard behavior.
@@ -1193,7 +1197,7 @@ void ModelWorkspace::asset_actions(const std::filesystem::path &dump) {
                 } catch (const std::exception &e) { error_ = e.what(); }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            if (ImGui::Button(studio::localization::tr("Cancel"))) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
     object_import_dialog(dump);
@@ -1293,7 +1297,7 @@ void ModelWorkspace::object_import_dialog(const std::filesystem::path &dump) {
         }
         ImGui::SameLine();
     } else ImGui::TextWrapped("No static templates found. Add a native object to the project library first.");
-    if (ImGui::Button("Cancel")) {
+    if (ImGui::Button(studio::localization::tr("Cancel"))) {
         new_object_geometry_.reset(); new_object_template_.reset(); object_templates_.clear();
         ImGui::CloseCurrentPopup();
     }
