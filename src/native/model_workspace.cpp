@@ -364,7 +364,7 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
         translated_categories[i] = studio::localization::tr(categories[i]);
     ImGui::BeginDisabled(busy || library_dialog_category_ >= 0 || clothing_dialog_slot_ >= 0);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##model-category", &category_, [](void *data, int index, const char **out) { *out = static_cast<const char **>(data)[index]; return true; }, translated_categories, 9)) {
+    if (ImGui::Combo("##model-category", &category_, translated_categories, 9)) {
         chosen_ = -1;
         search_[0] = 0;
         error_.clear();
