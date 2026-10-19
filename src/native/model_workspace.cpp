@@ -462,6 +462,29 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
                            count ? "No matching models."
                            : !error_.empty() ? error_.c_str()
                                  : "No models found for this category. Check the source archive.");
+    // Navigate the visible (filtered) model list with the Up/Down arrow keys.
+    // Only react while the list itself has keyboard focus, so the search field
+    // and other controls retain their normal keyboard behavior.
+    if (!busy && !stale && library_dialog_category_ < 0 &&
+        ImGui::IsWindowFocused() && !matches.empty()) {
+        int direction = 0;
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+            direction = 1;
+        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+            direction = -1;
+        if (direction != 0) {
+            auto it = std::find(matches.begin(), matches.end(), chosen_);
+            int current_row = it == matches.end() ? (direction > 0 ? -1 : int(matches.size()))
+                                                  : int(it - matches.begin());
+            int next_row = std::clamp(current_row + direction, 0, int(matches.size()) - 1);
+            if (chosen_ != matches[next_row]) {
+                chosen_ = matches[next_row];
+                open_selected();
+            }
+            // Keep the highlighted row visible even when the clipper skips it.
+            ImGui::SetScrollY(float(next_row) * ImGui::GetTextLineHeightWithSpacing());
+        }
+    }
     ImGuiListClipper clipper;
     clipper.Begin(int(matches.size()));
     while (clipper.Step())
