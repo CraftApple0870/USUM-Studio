@@ -15,6 +15,8 @@ class PokemonBundleEditor {
     std::string message_;
     std::filesystem::path folder_, export_;
     int mode_ = 0, target_ = 0, action_ = 0;
+    bool create_personal_data_ = true;
+    bool pending_create_personal_data_ = true;
     std::string owner_;
 };
 }

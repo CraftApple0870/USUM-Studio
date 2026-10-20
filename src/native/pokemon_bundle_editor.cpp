@@ -1,6 +1,9 @@
 #include "native/tutorial_widgets.h"
 #include "native/pokemon_bundle_editor.h"
 #include "assets/pokemon_bundle.h"
+#include "native/personal_form_creation.h"
+#include "native/personal_data_events.h"
+#include "core/game_profile.h"
 #include "native/project_binding.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -52,14 +55,31 @@ void PokemonBundleEditor::draw(const ModelDocument &donor, SDL_Window *window) {
                               ("pokemon-" + std::to_string(bundle.species) + "-form-" +
                                std::to_string(bundle.form));
                     save_pokemon_bundle(source, bundle, folder_);
+                    // Additional form: create the matching Personal Data row as
+                    // part of the same generated bundle folder.
+                    if (mode_ == 1 && pending_create_personal_data_) {
+                        auto personal_path = donor.dump / GameProfile::personal_archive;
+                        if (auto *project = project_store())
+                            personal_path = project->source / GameProfile::personal_archive;
+                        create_pokemon_personal_form(
+                            personal_path, folder_ / "personal.garc", bundle.species, bundle.form);
+                    }
                     if (mode_ == 0)
                         target_ = int(bundle.species + 1);
                     auto dump = donor.dump;
                     auto archives = donor.archive_sources;
                     archives.pokemon = folder_ / "pokemon.garc";
                     if (auto *project = project_store()) {
+                        // Validate/generate both bundles before importing either.
+                        if (mode_ == 1 && pending_create_personal_data_)
+                            project->import_file(GameProfile::personal_archive,
+                                                 folder_ / "personal.garc", true);
                         project->import_file(TargetProfile::pokemon_archive, archives.pokemon,
                                              true);
+                        // Notify the Personal Data browser only after both imports succeeded.
+                        // A failed graphics import must not signal a successful bundle.
+                        if (mode_ == 1 && pending_create_personal_data_)
+                            notify_personal_data_changed();
                         dump = project->source;
                         archives.pokemon.clear();
                     }
@@ -70,8 +90,11 @@ void PokemonBundleEditor::draw(const ModelDocument &donor, SDL_Window *window) {
                     require(found != catalog.end(), "Created Pokemon is missing");
                     prepared_ = std::make_unique<ModelDocument>(
                         load_pokemon(dump, *found, false, nullptr, archives));
-                    message_ = "Created independent donor assets. Send the new entry to Studio to "
-                               "edit it, or export its GARC.";
+                    message_ = mode_ == 1
+                        ? (pending_create_personal_data_
+                            ? "Model form and Personal Data created. Use normal Stage / Export."
+                            : "Model form created without changing Personal Data (0/1/7). Use normal Stage / Export.")
+                        : "Created independent donor assets. Send the new entry to Studio to edit it, or export its GARC.";
                 } else {
                     export_ = std::filesystem::u8path(path);
                     Archive(folder_ / "pokemon.garc").export_to(export_, {});
@@ -85,7 +108,7 @@ void PokemonBundleEditor::draw(const ModelDocument &donor, SDL_Window *window) {
         return;
     ImGui::BeginDisabled(action_ != 0);
     ImGui::TextWrapped("Clone this archive donor into a new species row or an additional form. "
-                       "Only the Pokemon GARC changes. Other tools handle game registration.");
+                       "Other game registration may still be required.");
     if (studio::TutorialWidgets::RadioButton("pokemon_bundle_editor", "New species row", &mode_, 0))
         target_ = 0;
     ImGui::SameLine();
@@ -97,6 +120,12 @@ void PokemonBundleEditor::draw(const ModelDocument &donor, SDL_Window *window) {
         } catch (const std::exception &e) {
             message_ = e.what();
         }
+    if (mode_ == 1) {
+        ImGui::Checkbox("Creer aussi les Personal Data (0/1/7)###bundle-personal-option",
+                        &create_personal_data_);
+        if (!create_personal_data_)
+            ImGui::TextDisabled("Mode modele seul : ne modifie pas les Personal Data.");
+    }
     if (mode_ == 0) {
         ImGui::Text("New species: %d", target_);
     } else {
@@ -106,6 +135,8 @@ void PokemonBundleEditor::draw(const ModelDocument &donor, SDL_Window *window) {
     auto choose = [&](int action) {
         owner_ = donor.name;
         action_ = action;
+        if (action == 1)
+            pending_create_personal_data_ = (mode_ == 1 && create_personal_data_);
         if (action == 1 && mode_ == 0)
             target_ = int(pokemon_species_rows(Archive(source_path())) + 1);
         {

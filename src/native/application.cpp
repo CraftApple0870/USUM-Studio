@@ -34,6 +34,11 @@
 #include "native/archive_picker.h"
 #include "native/imgui_renderer.h"
 #include "native/preferences.h"
+#include "native/localization.h"
+#include "native/personal_data_viewer.h"
+#include "native/item_data_viewer.h"
+#include "native/text_data_viewer.h"
+#include "native/evolution_data_viewer.h"
 #include "native/frame_pacing.h"
 #include "native/camera.h"
 #include "native/folder_picker.h"
@@ -127,19 +132,22 @@ void simplify_dock_tabs(ImGuiDockNode *node) {
         simplify_dock_tabs(child);
 }
 int workspace_selector(int selected, float reserved_width) {
-    const char *names[] = {"Maps",    "Models", "Studio", "Authoring", "Collision",
-                           "Cameras", "Images", "Audio",  "Warp Ride"};
+    const char *names[] = {"Maps", "Models", "Studio", "Authoring", "Collision",
+                           "Cameras", "Images", "Audio", "Warp Ride", "Data"};
+    const char *translated[10];
+    for (int i = 0; i < 10; ++i)
+        translated[i] = studio::localization::tr(names[i]);
     const auto &style = ImGui::GetStyle();
     float available = ImGui::GetWindowWidth() - reserved_width - style.WindowPadding.x * 2;
     if (available < ImGui::GetFontSize() * 54 + style.ItemSpacing.x * 8) {
         ImGui::SetNextItemWidth(std::max(
             80.f, std::min(ImGui::GetFontSize() * 14, available - style.ItemSpacing.x * 2)));
-        bool open = ImGui::BeginCombo("##workspace-navigation", names[selected]);
+        bool open = ImGui::BeginCombo("##workspace-navigation", translated[selected]);
         if (!open)
             studio::TutorialWidgets::item("main", "Workspace");
         if (open) {
-            for (int i = 0; i < 9; ++i)
-                if (ImGui::Selectable(names[i], selected == i))
+            for (int i = 0; i < 10; ++i)
+                if (ImGui::Selectable(translated[i], selected == i))
                     selected = i;
             ImGui::EndCombo();
         }
@@ -147,7 +155,7 @@ int workspace_selector(int selected, float reserved_width) {
     }
     ImGui::PushID("workspace-navigation");
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetStyle().FrameRounding * 3);
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 10; ++i) {
         if (i)
             ImGui::SameLine();
         bool active = selected == i;
@@ -155,7 +163,7 @@ int workspace_selector(int selected, float reserved_width) {
                               active ? ImVec4(.16f, .43f, .60f, 1) : ImVec4(.14f, .22f, .28f, 1));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(.23f, .49f, .65f, 1));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(.12f, .34f, .48f, 1));
-        if (studio::TutorialWidgets::Button("main", names[i], {ImGui::GetFontSize() * 6, 0}))
+        if (studio::TutorialWidgets::Button("main", translated[i], {ImGui::GetFontSize() * 6, 0}))
             selected = i;
         if (active) {
             auto low = ImGui::GetItemRectMin(), high = ImGui::GetItemRectMax();
@@ -177,13 +185,13 @@ void layout(int workspace, bool reset) {
                            "Studio workspace layout 2",    "Authoring workspace layout 3",
                            "Collision workspace layout 2", "Camera workspace layout 2",
                            "Image workspace layout 2",     "Audio workspace layout 2",
-                           "Warp Ride workspace layout 2"};
-    ImGuiID ids[9];
-    for (unsigned i = 0; i < 9; ++i)
+                           "Warp Ride workspace layout 2", "Data workspace layout 4"};
+    ImGuiID ids[10];
+    for (unsigned i = 0; i < 10; ++i)
         ids[i] = ImHashStr(names[i]);
     auto id = ids[workspace];
     bool create = reset || !ImGui::DockBuilderGetNode(id);
-    for (unsigned i = 0; i < 9; ++i)
+    for (unsigned i = 0; i < 10; ++i)
         if (i != unsigned(workspace) && ImGui::DockBuilderGetNode(ids[i]))
             ImGui::DockSpace(ids[i], {0, 0}, ImGuiDockNodeFlags_KeepAliveOnly);
     ImGui::DockSpaceOverViewport(id, viewport);
@@ -198,6 +206,19 @@ void layout(int workspace, bool reset) {
         workspace != 2
             ? std::clamp((workspace == 0 ? 260.f : 280.f) / viewport->WorkSize.x, .13f, .24f)
             : .24f;
+    if (workspace == 9) {
+        // Same arrangement as Models: editor selector left, editor content right.
+        auto browser = ImGui::DockBuilderSplitNode(
+            id, ImGuiDir_Left,
+            std::clamp(255.f / viewport->WorkSize.x, .13f, .25f),
+            nullptr, &center);
+        ImGui::DockBuilderDockWindow("Data browser", browser);
+        ImGui::DockBuilderDockWindow("Personal Data", center);
+        ImGui::DockBuilderDockWindow("Item Data", center);
+        ImGui::DockBuilderDockWindow("Text Data", center);
+        ImGui::DockBuilderFinish(id);
+        return;
+    }
     auto left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_fraction, nullptr, &center);
     const float right_fraction = workspace != 2
                                      ? std::clamp((workspace == 0 ? 310.f : 330.f) /
@@ -268,6 +289,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
     studio::Preferences preferences(preference_root.empty() ? std::filesystem::path{}
                                                             : preference_root / "preferences.cfg");
     SDL_free(pref_path);
+    studio::localization::set_language(preferences.get("language"));
     studio::FramePacing pacing;
     auto saved_flag = [&](const char *key, bool fallback) {
         auto value = preferences.get(key);
@@ -297,7 +319,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
     bool requested_battle = false;
     std::string pokemon_settings;
     bool camera_workspace = false, audio_workspace = false, image_workspace = false;
-    bool warp_ride_workspace = false;
+    bool warp_ride_workspace = false, data_workspace = false;
     std::string camera_patch;
     std::string dump = preferences.get("dump"), font_path, shader_directory, frame_material,
                 camera_pose, overlay_mode;
@@ -838,6 +860,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     running = false;
                 return;
             }
+            data_workspace = false;
             warp_ride_workspace = false;
             image_workspace = true;
             image_editor.request_leave([&] {
@@ -1332,6 +1355,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         collision.update();
         cameras.update();
         if (cameras.take_focus_request()) {
+            data_workspace = false;
             warp_ride_workspace = false;
             audio_workspace = false;
             image_workspace = false;
@@ -1343,6 +1367,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             camera.stop_look(window);
         }
         if (collision.take_focus_request()) {
+            data_workspace = false;
             warp_ride_workspace = false;
             authored_collision = false;
             audio_workspace = false;
@@ -1354,12 +1379,17 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             model_workspace = false;
             camera.stop_look(window);
         }
+        static studio::PersonalDataViewer personal_data_viewer;
+        static studio::ItemDataViewer item_data_viewer;
+        static studio::TextDataViewer text_data_viewer;
+        static studio::EvolutionDataViewer evolution_data_viewer;
         bool reset_layout = false;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(style.FramePadding.x, ImGui::GetFontSize() * .5f));
         conversation_editor.global_controls(preferences);
         if (ImGui::BeginMainMenuBar()) {
-            int workspace = warp_ride_workspace   ? 8
+            int workspace = data_workspace        ? 9
+                            : warp_ride_workspace   ? 8
                             : image_workspace     ? 6
                             : audio_workspace     ? 7
                             : camera_workspace    ? 5
@@ -1367,13 +1397,30 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                             : authoring_workspace ? 3
                             : studio_workspace    ? 2
                                                   : int(model_workspace);
-            float menu_width = ImGui::CalcTextSize("View").x + ImGui::CalcTextSize("Project").x +
-                               ImGui::CalcTextSize("Help").x + style.ItemSpacing.x * 6 +
-                               style.WindowPadding.x;
+
+            // ============================================================
+            // Calcul de la largeur réservée aux menus de droite.
+            //
+            // Prend en compte la traduction des intitulés, les espacements
+            // ImGui et une petite marge de sécurité supplémentaire.
+            // ============================================================
+
+            const float menu_spacing = style.ItemSpacing.x;
+
+            const float menu_width =
+                ImGui::CalcTextSize(
+                    studio::localization::tr("View")).x
+                + ImGui::CalcTextSize(
+                    studio::localization::tr("Project")).x
+                + ImGui::CalcTextSize("Help").x
+                + menu_spacing * 8.0f
+                + style.WindowPadding.x * 2.0f;
+
             int chosen_workspace = workspace_selector(workspace, menu_width);
             if (chosen_workspace != workspace) {
                 if (chosen_workspace == 0)
                     authored_collision = false;
+                data_workspace = chosen_workspace == 9;
                 warp_ride_workspace = chosen_workspace == 8;
                 image_workspace = chosen_workspace == 6;
                 audio_workspace = chosen_workspace == 7;
@@ -1386,7 +1433,24 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             }
             ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x * 2,
                                           ImGui::GetWindowWidth() - menu_width));
-            if (ImGui::BeginMenu("View")) {
+            if (ImGui::BeginMenu(studio::localization::tr("View"))) {
+                // Persist the selected interface language in preferences.cfg.
+                if (ImGui::BeginMenu(studio::localization::tr("Language"))) {
+                    if (ImGui::MenuItem("English", nullptr,
+                                       studio::localization::current == studio::localization::Language::English)) {
+                        studio::localization::set_language("en");
+                        preferences.set("language", "en");
+                        preferences.save();
+                    }
+                    if (ImGui::MenuItem("Français", nullptr,
+                                       studio::localization::current == studio::localization::Language::French)) {
+                        studio::localization::set_language("fr");
+                        preferences.set("language", "fr");
+                        preferences.save();
+                    }
+                    ImGui::EndMenu();
+                }
+
                 if (studio::TutorialWidgets::MenuItem("main", "3DS preview (400 x 240)", nullptr,
                                                       &studio::ImGuiRenderer::preview_3ds)) {
                     preferences.set("preview_3ds", studio::ImGuiRenderer::preview_3ds ? "1" : "0");
@@ -1407,7 +1471,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     reset_layout = true;
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Project")) {
+            if (ImGui::BeginMenu(studio::localization::tr("Project"))) {
                 projects.menu(area);
                 conversation_editor.menu(preferences);
                 ImGui::EndMenu();
@@ -1420,11 +1484,11 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             ImGui::SetNextWindowSize(ImVec2(680, 360), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Map diagnostics", &show_map_diagnostics)) {
                 if (!scene)
-                    ImGui::TextUnformatted("Load a map to view diagnostics.");
+                    ImGui::TextUnformatted(studio::localization::tr("Load a map to view diagnostics."));
                 else if (scene->diagnostics.empty())
-                    ImGui::TextUnformatted("No loading messages.");
+                    ImGui::TextUnformatted(studio::localization::tr("No loading messages."));
                 else {
-                    if (studio::TutorialWidgets::Button("main", "Copy details")) {
+                    if (studio::TutorialWidgets::Button("main", studio::localization::tr("Copy details"))) {
                         std::string details;
                         for (const auto &note : scene->diagnostics)
                             details += note + '\n';
@@ -1440,7 +1504,8 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             }
             ImGui::End();
         }
-        layout(warp_ride_workspace   ? 8
+        layout(data_workspace        ? 9
+               : warp_ride_workspace   ? 8
                : image_workspace     ? 6
                : audio_workspace     ? 7
                : camera_workspace    ? 5
@@ -1475,6 +1540,33 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         auto stats = bgfx::getStats();
         warp_ride.activate(warp_ride_workspace && !projects.gate());
         if (projects.gate()) {
+        } else if (data_workspace) {
+            // Populate the editor data before drawing the associated browser.
+            static int selected_data_editor = 0;
+            if (selected_data_editor == 0)
+                personal_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 1)
+                item_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 2)
+                text_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 3)
+                evolution_data_viewer.draw(std::filesystem::u8path(source), true);
+            if (ImGui::Begin("Data browser")) {
+                // Selector is shared with future editors (evolutions, moves, etc.).
+                const char* data_editors[] = {"Personal Data", "Item Data", "Text Data", "Evolution Data"};
+                ImGui::SetNextItemWidth(-1.f);
+                ImGui::Combo("##data-editor", &selected_data_editor, data_editors, 4);
+                ImGui::Separator();
+                if (selected_data_editor == 0)
+                    personal_data_viewer.draw_browser();
+                else if (selected_data_editor == 1)
+                    item_data_viewer.draw_browser();
+                else if (selected_data_editor == 2)
+                    text_data_viewer.draw_browser();
+                else if (selected_data_editor == 3)
+                    evolution_data_viewer.draw_browser();
+            }
+            ImGui::End();
         } else if (warp_ride_workspace) {
             warp_ride.draw(std::filesystem::u8path(source));
         } else if (image_workspace) {
@@ -1532,7 +1624,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 if (auto *project = studio::project_store()) {
                     ImGui::TextWrapped("Project: %s", project->root.filename().string().c_str());
                 } else {
-                    ImGui::TextUnformatted("Extracted dump folder");
+                    ImGui::TextUnformatted(studio::localization::tr("Extracted dump folder"));
                     ImGui::BeginDisabled(false);
                     ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - style.ItemSpacing.x);
                     if (ImGui::InputText("##dump", source, sizeof(source)))
@@ -1605,7 +1697,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 ImGui::EndDisabled();
                 if (job.valid()) {
                     ImGui::SameLine();
-                    if (studio::TutorialWidgets::Button("main", "Cancel"))
+                    if (studio::TutorialWidgets::Button("main", studio::localization::tr("Cancel")))
                         cancel = true;
                 }
                 if (job.valid() || !scene)
@@ -1703,9 +1795,9 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                         ImGui::SliderFloat("Highlights", &renderer.lighting.highlights, 0.f, 1.f);
                     }
                     bool effects_changed =
-                        studio::TutorialWidgets::Checkbox("main", "Fog", &renderer.fog_enabled);
+                        studio::TutorialWidgets::Checkbox("main", studio::localization::tr("Fog"), &renderer.fog_enabled);
                     effects_changed |=
-                        studio::TutorialWidgets::Checkbox("main", "Bloom", &renderer.bloom_enabled);
+                        studio::TutorialWidgets::Checkbox("main", studio::localization::tr("Bloom"), &renderer.bloom_enabled);
                     if (effects_changed) {
                         preferences.set("fog_enabled", renderer.fog_enabled ? "1" : "0");
                         preferences.set("bloom_enabled", renderer.bloom_enabled ? "1" : "0");
@@ -1764,7 +1856,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 }
             };
             auto display_controls = [&] {
-                if (studio::TutorialWidgets::Checkbox("main", "3DS preview",
+                if (studio::TutorialWidgets::Checkbox("main", studio::localization::tr("3DS preview"),
                                                       &studio::ImGuiRenderer::preview_3ds)) {
                     preferences.set("preview_3ds", studio::ImGuiRenderer::preview_3ds ? "1" : "0");
                     preferences.save();
@@ -1777,7 +1869,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                                         studio::ImGuiRenderer::preview_native_size ? "1" : "0");
                         preferences.save();
                     }
-                if (studio::TutorialWidgets::Button("main", "Fit environment") && scene)
+                if (studio::TutorialWidgets::Button("main", studio::localization::tr("Fit environment")) && scene)
                     camera.fit(*scene);
                 if (studio::TutorialWidgets::CollapsingHeader("main", "Scene contents")) {
                     bool changed =
@@ -1787,7 +1879,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                         ImGui::TextDisabled("This zone has no skybox.");
                     changed |= studio::TutorialWidgets::Checkbox("main", "Weather effects",
                                                                  &renderer.particles_enabled);
-                    changed |= studio::TutorialWidgets::Checkbox("main", "Characters",
+                    changed |= studio::TutorialWidgets::Checkbox("main", studio::localization::tr("Characters"),
                                                                  &renderer.characters_enabled);
                     changed |= studio::TutorialWidgets::Checkbox(
                         "main", "Include story-dependent characters",
@@ -1841,7 +1933,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                         ImGui::TextDisabled("Flight: %.0f units/s | Ctrl: %.1fx", camera.speed,
                                             camera.fast_multiplier);
                 }
-                if (studio::TutorialWidgets::CollapsingHeader("main", "Frame pacing")) {
+                if (studio::TutorialWidgets::CollapsingHeader("main", studio::localization::tr("Frame pacing"))) {
                     bool changed = studio::TutorialWidgets::Checkbox("main", "Limit FPS",
                                                                      &pacing.limit_enabled);
                     ImGui::BeginDisabled(!pacing.limit_enabled);
@@ -1909,7 +2001,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             if (ImGui::Selectable("Scene", !map_layers, 0, {75, 0}))
                 map_layers = false;
             ImGui::SameLine();
-            if (ImGui::Selectable("Layers", map_layers, 0, {75, 0}))
+            if (ImGui::Selectable(studio::localization::tr("Layers"), map_layers, 0, {75, 0}))
                 map_layers = true;
             ImGui::Separator();
             const auto before_draw = selection.draw;
@@ -1952,7 +2044,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 display_controls();
             else if (map_page == studio::MapInspectorPage::Settings) {
                 ImGui::SeparatorText("Map settings");
-                if (ImGui::Button("Environment & music", {-1, 0}))
+                if (ImGui::Button(studio::localization::tr("Environment & music"), {-1, 0}))
                     map_page = studio::MapInspectorPage::Environment;
                 if (ImGui::TreeNode("Loading & source details")) {
                     map_settings();
@@ -1961,7 +2053,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             } else if (map_preview) {
                 ImGui::SeparatorText("Player preview");
                 player_controls();
-                if (ImGui::Button("Environment & music", {-1, 0}))
+                if (ImGui::Button(studio::localization::tr("Environment & music"), {-1, 0}))
                     map_page = studio::MapInspectorPage::Environment;
             } else if (draw || region) {
                 auto name = draw ? draw->name.substr(0, draw->name.find(" / ")) : region->name;
@@ -1970,7 +2062,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                                                   : draw->placement >= 0 ? "Static model"
                                                                          : "Terrain / scenery")
                                                : studio::spatial_kind_name(region->kind));
-                if (ImGui::SmallButton("Clear selection")) {
+                if (ImGui::SmallButton(studio::localization::tr("Clear selection"))) {
                     selection = {};
                     renderer.spatial.selected = -1;
                 }
@@ -2006,12 +2098,12 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                         ImGui::TextDisabled("Zone %d", loaded_zone);
                 } else
                     ImGui::TextWrapped("Choose a map to get started.");
-                if (ImGui::Button("Environment & music", {-1, 0}))
+                if (ImGui::Button(studio::localization::tr("Environment & music"), {-1, 0}))
                     map_page = studio::MapInspectorPage::Environment;
             }
             if (properties && region && region->overworld && region->overworld->editor_id) {
                 ImGui::BeginDisabled(job.valid() || overworld.preview_busy());
-                if (ImGui::Button("Edit placement...", {-1, 0}))
+                if (ImGui::Button(studio::localization::tr("Edit placement..."), {-1, 0}))
                     overworld.inspect(*region->overworld);
                 ImGui::EndDisabled();
             }
@@ -2054,7 +2146,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 ImGui::SeparatorText("Gameplay");
                 if (ImGui::Button("Map cameras", {-1, 0}))
                     camera_workspace = true;
-                if (ImGui::Button("Collision", {-1, 0})) {
+                if (ImGui::Button(studio::localization::tr("Collision"), {-1, 0})) {
                     collision_workspace = true;
                     camera.stop_look(window);
                 }
@@ -2319,7 +2411,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             }
             if (hovered && region && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F))
                 browser.frame_selection(*scene, renderer, selection, camera);
-            studio::TutorialWidgets::Checkbox("main", "Animate", &renderer.playback.enabled);
+            studio::TutorialWidgets::Checkbox("main", studio::localization::tr("Animate"), &renderer.playback.enabled);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Enable scene animation; daily tracks follow the time of day");
             ImGui::SameLine();
@@ -2327,7 +2419,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             if (studio::TutorialWidgets::Button("main", animation_playing ? "Pause" : "Play"))
                 animation_playing = !animation_playing;
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("main", "Restart"))
+            if (studio::TutorialWidgets::Button("main", studio::localization::tr("Restart")))
                 renderer.playback.seconds = 0;
             if (ImGui::GetWindowWidth() >= 666.f)
                 ImGui::SameLine();
@@ -2448,13 +2540,14 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         if (observer) {
             studio::ApplicationFrame state;
             state.has_source = !dump.empty();
-            state.ready = warp_ride_workspace ? warp_ride.ready()
+            state.ready = data_workspace ? true
+                          : warp_ride_workspace ? warp_ride.ready()
                           : (authoring_workspace || (collision_workspace && authored_collision))
                               ? authoring.ready()
                           : studio_workspace ? asset_studio.ready()
                           : model_workspace  ? models.ready()
                                              : renderer.ready() && !job.valid();
-            state.map = !warp_ride_workspace && !collision_workspace && !authoring_workspace &&
+            state.map = !data_workspace && !warp_ride_workspace && !collision_workspace && !authoring_workspace &&
                         !studio_workspace && !model_workspace;
             state.error = warp_ride_workspace   ? warp_ride.error()
                           : authoring_workspace ? authoring.error()
