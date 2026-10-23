@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/uv_editor.h"
 #include "native/imgui_renderer.h"
@@ -134,11 +136,11 @@ void UvEditor::draw(MaterialDocument &doc, const EnvironmentRenderer &renderer, 
         for (auto &p : points_)
             p.selected = true;
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("uv_editor", "Clear selection"))
+    if (studio::TutorialWidgets::Button("uv_editor", studio::localization::tr("Clear selection")))
         for (auto &p : points_)
             p.selected = false;
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("uv_editor", "Frame UVs (F)"))
+    if (studio::TutorialWidgets::Button("uv_editor", studio::localization::tr("Frame UVs (F)")))
         fit_ = true;
     auto count = std::count_if(points_.begin(), points_.end(), [](auto &p) {
         return p.selected;
@@ -163,7 +165,7 @@ void UvEditor::draw(MaterialDocument &doc, const EnvironmentRenderer &renderer, 
         ImGui::SetNextItemWidth(150);
         ImGui::InputFloat2("Scale UV", scale_);
         ImGui::BeginDisabled(!count);
-        if (studio::TutorialWidgets::Button("uv_editor", "Apply UV transform")) {
+        if (studio::TutorialWidgets::Button("uv_editor", studio::localization::tr("Apply UV transform"))) {
             snapshot();
             transform({move_[0], move_[1]}, angle_ * .01745329252f, {scale_[0], scale_[1]});
             apply(doc);
@@ -173,7 +175,7 @@ void UvEditor::draw(MaterialDocument &doc, const EnvironmentRenderer &renderer, 
         ImGui::EndDisabled();
         ImGui::TreePop();
     }
-    if (ImGui::CollapsingHeader("Controls"))
+    if (ImGui::CollapsingHeader(studio::localization::tr("Controls")))
         ImGui::TextWrapped("Click/box: select | Ctrl: add/remove | G/R/S: tool | Esc: cancel\n"
                            "Wheel: zoom | Middle drag: pan | F: frame UVs");
     if (!error_.empty())
@@ -186,13 +188,13 @@ void UvEditor::draw(MaterialDocument &doc, const EnvironmentRenderer &renderer, 
     bool hovered = ImGui::IsItemHovered();
     auto &io = ImGui::GetIO();
     if (hovered && !dragging_ && !boxing_ && !io.WantTextInput && !io.KeyCtrl) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("uv.move", ImGuiKey_G))
             operation_ = 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_R))
+        if (studio::configurable_keys::pressed("uv.rotate", ImGuiKey_R))
             operation_ = 2;
-        if (ImGui::IsKeyPressed(ImGuiKey_S))
+        if (studio::configurable_keys::pressed("uv.scale", ImGuiKey_S))
             operation_ = 3;
-        if (ImGui::IsKeyPressed(ImGuiKey_F))
+        if (studio::configurable_keys::pressed("uv.frame", ImGuiKey_F))
             fit_ = true;
     }
     float base = std::min(size.x, size.y);

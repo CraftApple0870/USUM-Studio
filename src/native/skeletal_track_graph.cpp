@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/skeletal_track_graph.h"
 #include "native/tutorial_widgets.h"
 #include "assets/motion_key_edit.h"
@@ -63,7 +64,7 @@ SkeletalGraphResult SkeletalTrackGraph::draw(const SkeletalMotion &motion,
     if (ImGui::Button(playing ? "Pause" : "Play"))
         playing = !playing;
     ImGui::SameLine();
-    if (ImGui::Button("Restart"))
+    if (ImGui::Button(studio::localization::tr("Restart")))
         result.frame = 0;
     ImGui::SameLine();
     ImGui::Checkbox("Skeleton overlay", &show_bones);
@@ -73,7 +74,7 @@ SkeletalGraphResult SkeletalTrackGraph::draw(const SkeletalMotion &motion,
     ImGui::Checkbox("Include constant / bind channels", &constants_);
     if (show_weights) {
         ImGui::SameLine();
-        ImGui::Checkbox("Bone weights", show_weights);
+        ImGui::Checkbox(studio::localization::tr("Bone weights"), show_weights);
     }
     ImGui::TextWrapped(
         "Click a curve or key to select its bone and SRT channel. Drag empty space to scrub the "
@@ -96,7 +97,7 @@ SkeletalGraphResult SkeletalTrackGraph::draw(const SkeletalMotion &motion,
         if (ImGui::Button("Show all bones"))
             std::fill(masks_.begin(), masks_.end(), 511);
         ImGui::SameLine();
-        if (ImGui::Button("Hide all"))
+        if (ImGui::Button(studio::localization::tr("Hide all")))
             std::fill(masks_.begin(), masks_.end(), 0);
         if (ImGui::Button("Only selected bone")) {
             std::fill(masks_.begin(), masks_.end(), 0);

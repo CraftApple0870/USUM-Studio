@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/refresh_feeding_preview.h"
 #include "native/imgui_renderer.h"
@@ -103,7 +104,7 @@ void RefreshFeedingPreview::controls(const ModelDocument &document, MaterialDocu
             ImGui::TextWrapped("%s", error_.c_str());
         return;
     }
-    ImGui::TextUnformatted("Interactive feeding preview");
+    ImGui::TextUnformatted(studio::localization::tr("Interactive feeding preview"));
     ImGui::TextWrapped(
         "Drag the bean into the lower feeding area and hold it through the eating motions.");
     ImGui::SeparatorText("Feeding parameters");

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
 #include "native/pokemon_settings_editor.h"
@@ -217,7 +218,7 @@ void PokemonSettingsEditor::update() {
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("pokemon_settings_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("pokemon_settings_editor", studio::localization::tr("Cancel"))) {
             ImGui::CloseCurrentPopup();
             leave_action_ = {};
         }
@@ -484,7 +485,7 @@ void PokemonSettingsEditor::viewport(const ModelDocument &model, double seconds)
         } catch (const std::exception &e) {
             message_ = e.what();
         }
-    if (studio::TutorialWidgets::CollapsingHeader("pokemon_settings_editor", "Arena and trainer")) {
+    if (studio::TutorialWidgets::CollapsingHeader("pokemon_settings_editor", studio::localization::tr("Arena and trainer"))) {
         auto combo = [&](const char *title, const auto &entries, int &selected,
                          const char *prefix) {
             auto current = std::find_if(entries.begin(), entries.end(), [&](auto &e) {
@@ -493,7 +494,7 @@ void PokemonSettingsEditor::viewport(const ModelDocument &model, double seconds)
             ImGui::SetNextItemWidth(220);
             if (ImGui::BeginCombo(title,
                                   current == entries.end() ? "None" : current->name.c_str())) {
-                if (ImGui::Selectable("None", selected < 0)) {
+                if (ImGui::Selectable(studio::localization::tr("None"), selected < 0)) {
                     selected = -1;
                     stage_dirty_ = true;
                 }

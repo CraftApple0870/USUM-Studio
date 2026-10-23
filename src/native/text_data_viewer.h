@@ -18,7 +18,7 @@ class TextDataViewer {
 public:
     void draw(const std::filesystem::path &dump, bool active) {
         if (!active) return;
-        if (!ImGui::Begin("Text Data", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        if (!ImGui::Begin(studio::localization::tr("Text Data"), nullptr, ImGuiWindowFlags_NoCollapse)) {
             ImGui::End(); return;
         }
         const auto root = project_store() ? project_store()->source : dump;
@@ -28,19 +28,19 @@ public:
         if (ImGui::Button("Actualiser###text-data-reload")) load(root, wanted_language);
         ImGui::SameLine();
         ImGui::TextDisabled("%s  |  %s  |  lecture seule",
-            kind_ == 0 ? "Game Text" : "Story Text",
+            kind_ == 0 ? studio::localization::tr("Game Text") : studio::localization::tr("Story Text"),
             wanted_language == 3 ? "FR" : "EN");
-        if (!error_.empty()) ImGui::TextWrapped("Archive : %s", error_.c_str());
+        if (!error_.empty()) ImGui::TextWrapped(studio::localization::bilingual("Archive: %s", "Archive : %s"), error_.c_str());
         if (archive_) {
-            ImGui::Text("Archive : %s", path_.string().c_str());
+            ImGui::Text(studio::localization::bilingual("Archive: %s", "Archive : %s"), path_.string().c_str());
             ImGui::Text("Tables : %zu", archive_->size());
             ImGui::Separator();
             if (selected_ >= 0 && std::size_t(selected_) < archive_->size()) {
                 ImGui::Text("Table #%d", selected_);
                 if (loaded_member_ != selected_) load_member();
-                if (!member_error_.empty()) ImGui::TextWrapped("Erreur de decodage : %s", member_error_.c_str());
+                if (!member_error_.empty()) ImGui::TextWrapped(studio::localization::bilingual("Decode error: %s", "Erreur de decodage : %s"), member_error_.c_str());
                 else {
-                    ImGui::TextDisabled("%zu lignes", lines_.size());
+                    ImGui::TextDisabled(studio::localization::bilingual("%zu lines", "%zu lignes"), lines_.size());
                     ImGui::Separator();
                     ImGui::BeginChild("##text-lines", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
                     ImGuiListClipper clipper;
@@ -62,7 +62,7 @@ public:
     }
 
     void draw_browser() {
-        const char *kinds[] = {"Game Text", "Story Text"};
+        const char *kinds[] = {studio::localization::tr("Game Text"), studio::localization::tr("Story Text")};
         ImGui::SetNextItemWidth(-1);
         if (ImGui::Combo("##text-kind", &kind_, kinds, 2)) {
             path_.clear(); archive_.reset(); loaded_member_ = -1;
@@ -70,10 +70,10 @@ public:
         }
         ImGui::Separator();
         if (!archive_) {
-            ImGui::TextDisabled("Aucune archive chargee.");
+            ImGui::TextDisabled(studio::localization::bilingual("No archive loaded.", "Aucune archive chargee."));
             return;
         }
-        ImGui::TextDisabled("%zu tables", archive_->size());
+        ImGui::TextDisabled(studio::localization::bilingual("%zu tables", "%zu tables"), archive_->size());
         if (ImGui::InputInt("Table###text-member-id", &selected_)) {
             selected_ = std::clamp(selected_, 0, int(archive_->size()) - 1);
             loaded_member_ = -1;

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/canvas_navigation.h"
 #include "native/undo_shortcuts.h"
 #include "native/texture_painter.h"
@@ -123,7 +124,7 @@ void TexturePainter::draw(MaterialDocument &doc, MaterialSelection &selection, b
         doc.redo();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Frame image (F)")) {
+    if (ImGui::Button(studio::localization::tr("Frame image (F)"))) {
         zoom_ = 1;
         pan_ = {};
     }
@@ -155,7 +156,7 @@ void TexturePainter::draw(MaterialDocument &doc, MaterialSelection &selection, b
             ImGui::TreePop();
         }
     }
-    if (ImGui::CollapsingHeader("Controls")) {
+    if (ImGui::CollapsingHeader(studio::localization::tr("Controls"))) {
         ImGui::TextWrapped("Wheel: zoom | Middle drag: pan | F: frame image\nAlt+click: pick | "
                            "Esc: cancel stroke");
         ImGui::TextWrapped("Shared textures change together. Painting uses RGBA8.");

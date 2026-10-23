@@ -1,5 +1,7 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/project_workspace.h"
+#include "native/activity_log.h"
 #include "native/conversation_editor.h"
 #include <imgui.h>
 #include <SDL3/SDL.h>
@@ -116,6 +118,7 @@ void ProjectWorkspace::save() {
     save_editor_project();
     saved_ = std::chrono::steady_clock::now();
     notice_ = "Project saved";
+    activity_log::add("Project", "Project saved");
     error_.clear();
 }
 void ProjectWorkspace::stage() {
@@ -127,6 +130,7 @@ void ProjectWorkspace::stage() {
         return stage_editor_project(build);
     });
     notice_ = "Staging changed members...";
+    activity_log::add("Project", "Staging changed members...");
 }
 void ProjectWorkspace::stage_and_reload() {
     stage();
@@ -138,6 +142,7 @@ void ProjectWorkspace::reload() {
     save();
     store_->advance();
     restart_ = true;
+    activity_log::add("Project", "Reloading staged assets");
 }
 void ProjectWorkspace::choose(int which) {
     picking_ = which;
@@ -235,6 +240,7 @@ void ProjectWorkspace::update() {
             export_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             export_.get();
             notice_ = "Game export built in exports";
+            activity_log::add("Export", notice_);
         }
         if (stage_.valid() &&
             stage_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -242,6 +248,7 @@ void ProjectWorkspace::update() {
             store_->accept(result);
             store_->collect();
             notice_ = "Overlay staged successfully";
+            activity_log::add("Project", notice_);
             for (auto &note : result.notes)
                 notice_ += "\n" + note;
             staged_ = std::chrono::steady_clock::now();
@@ -299,6 +306,7 @@ void ProjectWorkspace::update() {
         notice_.clear();
         manager_ = true;
         error_ = project_error(e);
+        activity_log::add("Project", error_, activity_log::Level::Error);
         staged_ = std::chrono::steady_clock::now();
     }
 }
@@ -312,6 +320,7 @@ void ProjectWorkspace::build_current_changes() {
     preparing_export_ = true;
     manager_ = true;
     notice_ = "Compiling conversations before staging...";
+    activity_log::add("Build", notice_);
 }
 void ProjectWorkspace::build_game_export() {
     if (!store_ || busy() || store_->current_overlay.empty())
@@ -322,21 +331,126 @@ void ProjectWorkspace::build_game_export() {
     });
     error_.clear();
     notice_ = "Building game export...";
+    activity_log::add("Export", notice_);
+}
+// USUM0_2_QUICK_MENU_PATCH: Compact actions and an expanded quick-actions grid.
+// USUM_MENU_V2: the quick toolbar is the ONLY visual copy of these four actions.
+// Pictograms are vector-drawn by Dear ImGui; no external image assets needed.
+static void draw_quick_symbol(ImDrawList *draw, const ImVec2 &center, int id, ImU32 color) {
+    const float x = center.x, y = center.y;
+    const float t = 1.7f;
+    if (id == 0) { // disk / save
+        draw->AddRect(ImVec2(x-7,y-8), ImVec2(x+7,y+8), color, 1.7f, 0, t);
+        draw->AddRectFilled(ImVec2(x-4,y-7), ImVec2(x+3,y-2), color);
+        draw->AddRect(ImVec2(x-4,y+2), ImVec2(x+4,y+7), color, 0, 0, t);
+    } else if (id == 1) { // layered files / stage
+        draw->AddRect(ImVec2(x-6,y-7),ImVec2(x+4,y+4),color,1.f,0,t);
+        draw->AddLine(ImVec2(x-3,y+7), ImVec2(x+7,y+7),color,t);
+        draw->AddLine(ImVec2(x+7,y-4), ImVec2(x+7,y+7),color,t);
+    } else if (id == 2) { // reload
+        draw->AddCircle(ImVec2(x,y),6.2f,color,24,t);
+        draw->AddRectFilled(ImVec2(x+2,y-9),ImVec2(x+9,y-2),ImGui::GetColorU32(ImGuiCol_Button));
+        draw->AddLine(ImVec2(x+2,y-8),ImVec2(x+8,y-7),color,t);
+        draw->AddLine(ImVec2(x+8,y-7),ImVec2(x+6,y-1),color,t);
+    } else { // hammer / build
+        draw->AddLine(ImVec2(x-5,y+7),ImVec2(x+4,y-4),color,3.f);
+        draw->AddLine(ImVec2(x-1,y-8),ImVec2(x+8,y-1),color,3.f);
+        draw->AddLine(ImVec2(x-3,y-5),ImVec2(x+2,y-10),color,t);
+    }
+}
+void ProjectWorkspace::quick_actions(bool compact) {
+    try {
+        const bool fr = localization::current == localization::Language::French;
+        struct Action { const char *en; const char *fr; const char *hint; bool available; int id; };
+        const Action actions[] = {
+            {"Save", "Enregistrer", "Ctrl+Shift+S", bool(store_), 0},
+            {"Stage", "Préparer", "Ctrl+Shift+T", bool(store_) && !busy(), 1},
+            {"Reload", "Recharger", "Ctrl+Shift+R", bool(store_) && !busy() && !store_->unstaged(), 2},
+            {"Build", "Compiler", "Ctrl+Shift+B", bool(store_) && !busy(), 3}
+        };
+        ImGui::PushID("project-quick-actions");
+        for (const auto &action : actions) {
+            ImGui::PushID(action.id);
+            if (action.id > 0 && compact) ImGui::SameLine();
+            ImGui::BeginDisabled(!action.available);
+            bool clicked = false;
+            if (compact) {
+                const bool icon_only = true;
+                const ImVec2 size(icon_only ? 41.f : 117.f, ImGui::GetFrameHeight());
+                clicked = ImGui::Button("##action", size);
+                const ImVec2 lo = ImGui::GetItemRectMin();
+                const ImVec2 hi = ImGui::GetItemRectMax();
+                const auto color = ImGui::GetColorU32(ImGuiCol_Text);
+                draw_quick_symbol(ImGui::GetWindowDrawList(),
+                                  ImVec2(lo.x+18.f, (lo.y+hi.y)*.5f), action.id, color);
+                if (!icon_only)
+                    ImGui::GetWindowDrawList()->AddText(ImVec2(lo.x+34.f,
+                        (lo.y+hi.y-ImGui::GetFontSize())*.5f), color, fr ? action.fr : action.en);
+            } else {
+                clicked = ImGui::MenuItem(fr ? action.fr : action.en, action.hint);
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (!store_) ImGui::SetTooltip("%s", fr ? "Ouvrir un projet pour activer cette action" : "Open a project to enable this action");
+                else ImGui::SetTooltip("%s  (%s)", fr ? action.fr : action.en, action.hint);
+            }
+            if (clicked) {
+                switch (action.id) {
+                    case 0: save(); break;
+                    case 1: stage(); break;
+                    case 2: reload(); break;
+                    case 3: build_current_changes(); break;
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::PopID();
+    } catch (const std::exception &e) {
+        error_ = project_error(e);
+        manager_ = true;
+    }
+}
+
+// USUM_MENU_V2: read the real project game target for the window title.
+std::string ProjectWorkspace::active_game_name() const {
+    return store_ ? game_target_name(store_->target) : std::string{};
+}
+
+void ProjectWorkspace::file_menu() {
+    try {
+        if (studio::TutorialWidgets::MenuItem("project_workspace", "New Project...", nullptr, false,
+                                              !busy())) {
+            creating_ = true;
+            setup_ = true;
+            directory_[0] = 0;
+        }
+        if (studio::TutorialWidgets::MenuItem("project_workspace", "Open Project...", nullptr,
+                                              false, !busy())) {
+            creating_ = false;
+            setup_ = true;
+            directory_[0] = 0;
+        }
+        auto recent = preferences_.get("previous_project");
+        if (!recent.empty() && ImGui::BeginMenu("Recent project")) {
+            if (studio::TutorialWidgets::MenuItem("project_workspace", recent.c_str()))
+                switch_to(std::filesystem::u8path(recent));
+            ImGui::EndMenu();
+        }
+    } catch (const std::exception &e) {
+        error_ = project_error(e);
+        manager_ = true;
+    }
 }
 void ProjectWorkspace::menu(int area) {
     try {
         if (store_) {
+            ImGui::TextDisabled("%s", "CURRENT PROJECT");
             ImGui::TextUnformatted(store_->root.filename().string().c_str());
             ImGui::TextDisabled("Target: %s", game_target_name(store_->target));
             ImGui::Separator();
-            if (studio::TutorialWidgets::MenuItem("project_workspace", "Save Project",
-                                                  "Ctrl+Shift+S"))
-                save();
-            if (studio::TutorialWidgets::MenuItem("project_workspace", "Stage Project",
-                                                  "Ctrl+Shift+T", false, !busy()))
-                stage();
+            ImGui::TextDisabled("%s", "PROJECT TOOLS");
             if (studio::TutorialWidgets::MenuItem(
-                    "project_workspace", "Create map from template...", nullptr, false, !busy())) {
+                    "project_workspace", studio::localization::tr("Create map from template..."), nullptr, false, !busy())) {
                 map_templates_ = load_map_catalog(store_->source);
                 map_template_ = -1;
                 map_entrance_ = -1;
@@ -354,16 +468,9 @@ void ProjectWorkspace::menu(int area) {
             if (studio::TutorialWidgets::MenuItem("project_workspace",
                                                   "Changes, history and settings..."))
                 manager_ = true;
-            if (studio::TutorialWidgets::MenuItem("project_workspace", "Reload staged assets",
-                                                  "Ctrl+Shift+R", false,
-                                                  !busy() && !store_->unstaged()))
-                reload();
             if (studio::TutorialWidgets::MenuItem("project_workspace", "Open project folder"))
                 SDL_OpenURL(("file:///" + store_->root.generic_string()).c_str());
-            if (studio::TutorialWidgets::MenuItem("project_workspace", "Build current changes",
-                                                  "Ctrl+Shift+B", false, !busy()))
-                build_current_changes();
-            if (studio::TutorialWidgets::MenuItem("project_workspace", "Build staged export",
+            if (studio::TutorialWidgets::MenuItem("project_workspace", studio::localization::tr("Build staged export"),
                                                   nullptr, false,
                                                   !busy() && !store_->current_overlay.empty()))
                 build_game_export();
@@ -371,6 +478,8 @@ void ProjectWorkspace::menu(int area) {
                     "project_workspace", "Open exports folder", nullptr, false,
                     std::filesystem::exists(store_->overlay_directory())))
                 SDL_OpenURL(("file:///" + store_->overlay_directory().generic_string()).c_str());
+            ImGui::Separator();
+            ImGui::TextDisabled("%s", "IMPORT / EXTERNAL");
             if (TutorialWidgets::MenuItem("project_workspace", "External editing (pk3DS)...",
                                           nullptr, false, !busy())) {
                 const auto connection = store_->external_connection();
@@ -379,7 +488,7 @@ void ProjectWorkspace::menu(int area) {
                 external_open_ = true;
                 external_copy_ = false;
             }
-            if (ImGui::BeginMenu("Import source archive", !busy())) {
+            if (ImGui::BeginMenu(studio::localization::tr("Import source archive"), !busy())) {
                 auto import = [&](const char *label, const char *relative) {
                     if (studio::TutorialWidgets::MenuItem("project_import", label)) {
                         import_target_ = relative;
@@ -409,24 +518,7 @@ void ProjectWorkspace::menu(int area) {
             }
             ImGui::Separator();
         }
-        if (studio::TutorialWidgets::MenuItem("project_workspace", "New Project...", nullptr, false,
-                                              !busy())) {
-            creating_ = true;
-            setup_ = true;
-            directory_[0] = 0;
-        }
-        if (studio::TutorialWidgets::MenuItem("project_workspace", "Open Project...", nullptr,
-                                              false, !busy())) {
-            creating_ = false;
-            setup_ = true;
-            directory_[0] = 0;
-        }
-        auto recent = preferences_.get("previous_project");
-        if (!recent.empty() && ImGui::BeginMenu("Recent project")) {
-            if (studio::TutorialWidgets::MenuItem("project_workspace", recent.c_str()))
-                switch_to(std::filesystem::u8path(recent));
-            ImGui::EndMenu();
-        }
+        ImGui::TextDisabled("%s", "OPEN / CREATE");
     } catch (const std::exception &e) {
         error_ = project_error(e);
         manager_ = true;
@@ -450,7 +542,7 @@ void ProjectWorkspace::draw_external_editing() {
         external_copy_ = true;
     ImGui::InputText("Dump folder", external_directory_, sizeof(external_directory_));
     ImGui::SameLine();
-    if (ImGui::Button("Browse...##external"))
+    if (ImGui::Button(studio::localization::tr("Browse...##external")))
         choose(4);
     if (external_copy_)
         ImGui::TextWrapped(
@@ -858,14 +950,14 @@ void ProjectWorkspace::draw() {
                                : store_->unstaged() ? "Saved changes are waiting to be staged"
                                                     : "Saved changes match the staged version");
         try {
-            if (studio::TutorialWidgets::Button("project_workspace", "Save Project"))
+            if (studio::TutorialWidgets::Button("project_workspace", studio::localization::tr("Save Project")))
                 save();
             ImGui::SameLine();
             ImGui::BeginDisabled(busy());
             if (studio::TutorialWidgets::Button("project_workspace", "Stage Project"))
                 stage();
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("project_workspace", "Build current changes"))
+            if (studio::TutorialWidgets::Button("project_workspace", studio::localization::tr("Build current changes")))
                 build_current_changes();
             ImGui::EndDisabled();
             const auto &bindings = ProjectBinding::all();
@@ -944,7 +1036,7 @@ void ProjectWorkspace::draw() {
                     }
                     ImGui::EndTabItem();
                 }
-                if (studio::TutorialWidgets::BeginTabItem("project_workspace", "History")) {
+                if (studio::TutorialWidgets::BeginTabItem("project_workspace", studio::localization::tr("History"))) {
                     ImGui::TextWrapped("Restore replaces the saved documents and overlay with a "
                                        "successful staged version. Save and stage current work "
                                        "first if you want to retain it in history.");
@@ -965,13 +1057,13 @@ void ProjectWorkspace::draw() {
                     }
                     ImGui::EndTabItem();
                 }
-                if (studio::TutorialWidgets::BeginTabItem("project_workspace", "Settings")) {
+                if (studio::TutorialWidgets::BeginTabItem("project_workspace", studio::localization::tr("Settings"))) {
                     auto settings = store_->settings;
                     bool changed = studio::TutorialWidgets::Checkbox(
-                        "project_workspace", "Autosave", &settings.autosave);
+                        "project_workspace", studio::localization::tr("Autosave"), &settings.autosave);
                     changed |= ImGui::InputInt("Save interval (seconds)", &settings.save_seconds);
                     changed |= studio::TutorialWidgets::Checkbox(
-                        "project_workspace", "Automatically stage saved changes",
+                        "project_workspace", studio::localization::tr("Automatically stage saved changes"),
                         &settings.auto_stage);
                     changed |= ImGui::InputInt("Stage interval (seconds)", &settings.stage_seconds);
                     changed |= ImGui::InputInt("Keep staged versions", &settings.history);
@@ -984,7 +1076,7 @@ void ProjectWorkspace::draw() {
                     }
                     bool reload_after_stage = preferences_.get("project.reload_after_stage") == "1";
                     if (studio::TutorialWidgets::Checkbox("project_workspace",
-                                                          "Automatically reload after staging",
+                                                          studio::localization::tr("Automatically reload after staging"),
                                                           &reload_after_stage)) {
                         preferences_.set("project.reload_after_stage",
                                          reload_after_stage ? "1" : "0");

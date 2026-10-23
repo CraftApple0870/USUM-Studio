@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/canvas_navigation.h"
 #include "native/undo_shortcuts.h"
 #include "assets/material_motion.h"
@@ -208,11 +209,11 @@ void UvMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
         }
     };
     ImGui::BeginDisabled(transforming_);
-    ImGui::Checkbox("Auto key", &auto_key_);
+    ImGui::Checkbox(studio::localization::tr("Auto key"), &auto_key_);
     ImGui::SameLine();
-    bool insert_requested = ImGui::Button("Insert key");
+    bool insert_requested = ImGui::Button(studio::localization::tr("Insert key"));
     ImGui::SameLine();
-    if (ImGui::Button("Discard preview")) {
+    if (ImGui::Button(studio::localization::tr("Discard preview"))) {
         pending_ = false;
         frame_ = -1;
     }
@@ -249,7 +250,7 @@ void UvMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
         pending_ = true;
         playing = false;
     }
-    if (ImGui::Button("Frame image (F)")) {
+    if (ImGui::Button(studio::localization::tr("Frame image (F)"))) {
         zoom_ = 1;
         pan_ = {};
     }

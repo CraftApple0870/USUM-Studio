@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/script_sound_picker.h"
 #include <imgui.h>
 #include <algorithm>
@@ -35,7 +36,7 @@ bool ScriptSoundPicker::draw(const std::filesystem::path &source, unsigned &refe
     }
     drawn_ = true;
     bool changed = false;
-    if (ImGui::Button("Browse sounds...")) {
+    if (ImGui::Button(studio::localization::tr("Browse sounds..."))) {
         candidate_ = reference;
         search_[0] = 0;
         ImGui::OpenPopup("Choose conversation sound");
@@ -95,7 +96,7 @@ bool ScriptSoundPicker::draw(const std::filesystem::path &source, unsigned &refe
             }
             ImGui::SameLine();
         }
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button(studio::localization::tr("Cancel"))) {
             preview_.reset();
             ImGui::CloseCurrentPopup();
         }

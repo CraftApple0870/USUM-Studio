@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/viewport_navigation.h"
 #include "native/warp_ride_workspace.h"
 #include "native/imgui_renderer.h"
@@ -190,8 +191,8 @@ void WarpRideWorkspace::controls() {
     if (ImGui::Button("Restart with settings"))
         restart();
     ImGui::EndDisabled();
-    ImGui::Checkbox("Collision guides", &guides_);
-    if (ImGui::Checkbox("Free camera", &free_camera_) && free_camera_) {
+    ImGui::Checkbox(studio::localization::tr("Collision guides"), &guides_);
+    if (ImGui::Checkbox(studio::localization::tr("Free camera"), &free_camera_) && free_camera_) {
         running_ = false;
         reset_free_camera();
     }
@@ -290,7 +291,7 @@ void WarpRideWorkspace::viewport() {
     if (resource_view_) {
         ImGui::Checkbox("Animate asset", &animate_);
         ImGui::SameLine();
-        if (ImGui::Button("Frame asset"))
+        if (ImGui::Button(studio::localization::tr("Frame asset")))
             camera_.fit(assets_.geometry[selected_].low, assets_.geometry[selected_].high);
         ImGui::TextWrapped("%s", viewport_navigation_help);
         float duration = 1;

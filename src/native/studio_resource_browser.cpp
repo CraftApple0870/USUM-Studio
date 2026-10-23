@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/studio_resource_browser.h"
 #include "native/imgui_renderer.h"
 #include "native/tutorial_widgets.h"
@@ -99,7 +100,7 @@ StudioResourceBrowser::draw(MaterialDocument &doc, const EnvironmentRenderer &re
         request = StudioResourceRequest{{}, StudioResourceRequest::Action::Save};
     ImGui::EndDisabled();
     if (ImGui::BeginTabBar("Resource views")) {
-        if (ImGui::BeginTabItem("Browse", nullptr,
+        if (ImGui::BeginTabItem(studio::localization::tr("Browse"), nullptr,
                                 select_tab && !requested_changes ? ImGuiTabItemFlags_SetSelected
                                                                  : 0)) {
             changes_ = false;
@@ -242,7 +243,7 @@ StudioResourceBrowser::draw(MaterialDocument &doc, const EnvironmentRenderer &re
             }
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Changes", nullptr,
+        if (ImGui::BeginTabItem(studio::localization::tr("Changes"), nullptr,
                                 select_tab && requested_changes ? ImGuiTabItemFlags_SetSelected
                                                                 : 0)) {
             changes_ = true;

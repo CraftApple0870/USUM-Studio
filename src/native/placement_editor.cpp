@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/placement_editor.h"
 #include "native/undo_shortcuts.h"
@@ -464,7 +466,7 @@ void PlacementEditor::draw(const MaterialSelection &selection, const SpatialPoin
                     });
                 ImGui::BeginDisabled(document_->changed_count() == 0);
                 if (studio::TutorialWidgets::Button("placement_editor",
-                                                    "Export placement override...", {-1, 0})) {
+                                                    studio::localization::tr("Export placement override..."), {-1, 0})) {
                     document_->compile();
                     open_dialog(3);
                 }
@@ -503,14 +505,14 @@ void PlacementEditor::draw(const MaterialSelection &selection, const SpatialPoin
             }
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("placement_editor", "Discard")) {
+        if (studio::TutorialWidgets::Button("placement_editor", studio::localization::tr("Discard"))) {
             auto action = std::move(leave_action_);
             ImGui::CloseCurrentPopup();
             if (action)
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("placement_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("placement_editor", studio::localization::tr("Cancel"))) {
             leave_action_ = {};
             ImGui::CloseCurrentPopup();
         }
@@ -618,9 +620,9 @@ bool PlacementEditor::gizmo(const float *view, const float *projection, ImVec2 o
     draw->PopClipRect();
     if (hovered && !dragging() && !io.WantTextInput && !io.KeyCtrl &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("maps.place_move", ImGuiKey_G))
             mode_ = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_R))
+        if (studio::configurable_keys::pressed("maps.place_rotate", ImGuiKey_R))
             mode_ = 1;
     }
     auto ring_angle = [&](const PlacementState &value) {

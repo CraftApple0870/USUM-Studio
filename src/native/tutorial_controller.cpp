@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_controller.h"
 #include "native/tutorial_widgets.h"
 #include <imgui_internal.h>
@@ -110,32 +111,39 @@ void TutorialController::observe(const char *module, const char *label, bool use
     }
 }
 void TutorialController::menu() {
-    if (!ImGui::BeginMenu("Help"))
+    if (!ImGui::BeginMenu(studio::localization::tr("Help")))
         return;
-    if (ImGui::MenuItem("Tutorials enabled", nullptr, &state_.enabled)) {
-        if (state_.enabled)
-            paused_ = false;
+    const bool fr = studio::localization::current == studio::localization::Language::French;
+    ImGui::TextDisabled("%s", fr ? "TUTORIELS" : "TUTORIALS");
+    ImGui::Separator();
+    if (ImGui::MenuItem(fr ? "Activer les tutoriels" : "Tutorials enabled", nullptr,
+                        &state_.enabled)) {
+        if (state_.enabled) paused_ = false;
         save();
     }
-    if (ImGui::MenuItem(paused_ ? "Resume walkthrough" : "Pause walkthrough", nullptr, false,
-                        state_.enabled)) {
+    if (ImGui::MenuItem(paused_ ? (fr ? "Reprendre le parcours" : "Resume walkthrough") :
+                                 (fr ? "Mettre en pause" : "Pause walkthrough"),
+                        nullptr, false, state_.enabled)) {
         paused_ = !paused_;
         save();
     }
-    if (ImGui::MenuItem("Replay this workspace", nullptr, false, state_.enabled)) {
+    if (ImGui::MenuItem(fr ? "Rejouer cet espace" : "Replay this workspace",
+                        nullptr, false, state_.enabled)) {
         const auto &intro = tutorial_workspace(workspace_);
         state_.completed.erase(intro.id);
-        for (auto &id : encountered_[workspace_])
-            state_.completed.erase(id);
+        for (auto &id : encountered_[workspace_]) state_.completed.erase(id);
         state_.current = intro.id;
         paused_ = false;
         save();
     }
-    if (ImGui::MenuItem("Restart all tutorials"))
+    if (ImGui::MenuItem(fr ? "Recommencer tous les tutoriels" : "Restart all tutorials"))
         restart_requested_ = true;
+    ImGui::Spacing();
     ImGui::Separator();
-    ImGui::MenuItem("Control reference...", nullptr, &reference_);
-    ImGui::MenuItem("Explain controls on hover", nullptr, &inspect_);
+    ImGui::TextDisabled("%s", fr ? "ASSISTANCE" : "ASSISTANCE");
+    ImGui::Separator();
+    ImGui::MenuItem(studio::localization::tr("Control reference..."), nullptr, &reference_);
+    ImGui::MenuItem(studio::localization::tr("Explain controls on hover"), nullptr, &inspect_);
     ImGui::EndMenu();
 }
 void TutorialController::draw_reference() {
@@ -189,7 +197,7 @@ void TutorialController::draw() {
         restart_requested_ = false;
     }
     if (ImGui::BeginPopupModal("Restart tutorials?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Clear tutorial progress? Your project edits are unaffected.");
+        ImGui::TextUnformatted(studio::localization::tr("Clear tutorial progress? Your project edits are unaffected."));
         if (ImGui::Button("Restart tutorials")) {
             state_.restart();
             paused_ = false;
@@ -198,7 +206,7 @@ void TutorialController::draw() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
+        if (ImGui::Button(studio::localization::tr("Cancel")))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         return;
@@ -217,7 +225,7 @@ void TutorialController::draw() {
         if (ImGui::BeginPopupModal("Welcome to USUMStudio", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::PushTextWrapPos();
-            ImGui::TextUnformatted("Learn the editor as you use it");
+            ImGui::TextUnformatted(studio::localization::tr("Learn the editor as you use it"));
             ImGui::Separator();
             ImGui::TextUnformatted("Start with a project, load a map, then explore the workspace "
                                    "tabs. A walkthrough card explains the controls you encounter "
@@ -227,7 +235,7 @@ void TutorialController::draw() {
                 "Use Next control to continue, or pause whenever you want. Hover over buttons for "
                 "quick help. Lessons never press buttons or change project data for you.");
             bool off = false;
-            if (ImGui::Checkbox("Turn tutorials off", &off) && off) {
+            if (ImGui::Checkbox(studio::localization::tr("Turn tutorials off"), &off) && off) {
                 state_.enabled = false;
                 state_.welcomed = true;
                 save();
@@ -299,7 +307,7 @@ void TutorialController::draw() {
             return std::find(visible_.begin(), visible_.end(), id) != visible_.end();
         });
         ImGui::BeginDisabled(previous == history_.rend());
-        if (ImGui::Button("Back")) {
+        if (ImGui::Button(studio::localization::tr("Back"))) {
             state_.current = *previous;
             history_.erase(previous.base() - 1, history_.end());
             state_.completed.erase(state_.current);
@@ -325,7 +333,7 @@ void TutorialController::draw() {
         }
         ImGui::SameLine();
         bool off = false;
-        if (ImGui::Checkbox("Turn tutorials off", &off) && off) {
+        if (ImGui::Checkbox(studio::localization::tr("Turn tutorials off"), &off) && off) {
             state_.enabled = false;
             save();
         }

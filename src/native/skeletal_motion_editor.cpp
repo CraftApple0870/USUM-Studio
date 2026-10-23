@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/motion_graph.h"
 #include "assets/motion_key_edit.h"
 #include "native/tutorial_widgets.h"
@@ -59,7 +60,7 @@ void SkeletalMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
     }
     ImGui::TextDisabled("Select a bone to pose or edit its keys.");
     if (preview.looping_overlay >= 0) {
-        if (ImGui::Button("Disable overlay for posing")) {
+        if (ImGui::Button(studio::localization::tr("Disable overlay for posing"))) {
             preview.looping_effects = false;
             preview.select_motion(preview.motion, repeat);
         }
@@ -231,7 +232,7 @@ void SkeletalMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
     bool valid = key_frame_ >= 0 && key_frame_ <= motion.frames && std::isfinite(value_) &&
                  std::isfinite(slope_);
     ImGui::BeginDisabled(!valid);
-    if (studio::TutorialWidgets::Button("skeletal_motion_editor", "Insert key")) {
+    if (studio::TutorialWidgets::Button("skeletal_motion_editor", studio::localization::tr("Insert key"))) {
         auto &keys = track.curves[channel_].keys;
         std::erase_if(keys, [&](auto &k) {
             return k.frame == key_frame_;
@@ -245,7 +246,7 @@ void SkeletalMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
         apply(false);
     }
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("skeletal_motion_editor", "Delete key")) {
+    if (studio::TutorialWidgets::Button("skeletal_motion_editor", studio::localization::tr("Delete key"))) {
         auto &keys = track.curves[channel_].keys;
         std::erase_if(keys, [&](auto &k) {
             return k.frame == key_frame_;

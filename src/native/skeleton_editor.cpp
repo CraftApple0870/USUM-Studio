@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/skeleton_editor.h"
 #include <imgui.h>
@@ -77,7 +78,7 @@ void SkeletonEditor::draw(MaterialDocument &doc, ModelDocument &preview,
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##new-bone", "Unique bone name", name_, sizeof(name_));
     ImGui::BeginDisabled(!name_[0]);
-    if (studio::TutorialWidgets::Button("skeleton_editor", "Add child bone")) {
+    if (studio::TutorialWidgets::Button("skeleton_editor", studio::localization::tr("Add child bone"))) {
         auto next = joints;
         Joint added;
         added.name = name_;

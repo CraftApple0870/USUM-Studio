@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/property_track_graph.h"
 #include "native/tutorial_widgets.h"
 #include "assets/motion_key_edit.h"
@@ -97,7 +98,7 @@ PropertyGraphResult PropertyTrackGraph::draw(const std::vector<PropertyGraphTrac
     if (ImGui::Button(playing ? "Pause" : "Play"))
         playing = !playing;
     ImGui::SameLine();
-    if (ImGui::Button("Restart"))
+    if (ImGui::Button(studio::localization::tr("Restart")))
         result.frame = 0;
     if (!visibility) {
         ImGui::SameLine();
@@ -122,7 +123,7 @@ PropertyGraphResult PropertyTrackGraph::draw(const std::vector<PropertyGraphTrac
             for (auto &t : tracks)
                 shown_[t.name] = true;
         ImGui::SameLine();
-        if (ImGui::Button("Hide all"))
+        if (ImGui::Button(studio::localization::tr("Hide all")))
             for (auto &t : tracks)
                 shown_[t.name] = false;
         ImGui::SameLine();

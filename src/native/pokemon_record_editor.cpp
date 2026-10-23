@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/pokemon_record_editor.h"
 #include "native/tutorial_widgets.h"
 #include "field/area.h"
@@ -94,7 +95,7 @@ bool PokemonRecordEditor::draw() {
                         filter.Draw("Search name or ID");
                         ImGui::BeginChild("choices", {0, 200});
                         if (field.names == PokemonRecordField::Names::Item && document_->kind() == PokemonRecordKind::Trade &&
-                            ImGui::Selectable("None", draft_[i] == 65535)) { draft_[i] = 65535; ImGui::CloseCurrentPopup(); }
+                            ImGui::Selectable(studio::localization::tr("None"), draft_[i] == 65535)) { draft_[i] = 65535; ImGui::CloseCurrentPopup(); }
                         for (unsigned value = field.minimum; value < names.size(); ++value) {
                             auto choice = field.names == PokemonRecordField::Names::Move && value == 0 ? std::string("No explicit move / 0") : names[value] + " / " + std::to_string(value);
                             if (!filter.PassFilter(choice.c_str())) continue;
@@ -121,7 +122,7 @@ bool PokemonRecordEditor::draw() {
                 } catch (const std::exception &error) { error_ = error.what(); }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel changes")) { refresh(); error_.clear(); }
+            if (ImGui::Button(studio::localization::tr("Cancel changes"))) { refresh(); error_.clear(); }
             ImGui::EndDisabled();
             if (pending) ImGui::TextDisabled("Apply these fields before saving the project.");
             ImGui::TextWrapped("Save Project stores applied edits. Stage Project and Build current changes remain separate actions.");

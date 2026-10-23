@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/warp_editor.h"
 #include <imgui.h>
@@ -139,7 +141,7 @@ void WarpEditor::draw(bool loading, ViewportCamera &camera, const SpatialPoint *
     if (show_launcher) {
         ImGui::Begin("Map inspector");
         ImGui::BeginDisabled(!document_ || loading);
-        if (studio::TutorialWidgets::Button("warp_editor", "Entrances...", ImVec2(-1, 0)))
+        if (studio::TutorialWidgets::Button("warp_editor", studio::localization::tr("Entrances..."), ImVec2(-1, 0)))
             open_ = true;
         ImGui::EndDisabled();
         if (!document_ && !message_.empty())
@@ -220,14 +222,14 @@ void WarpEditor::draw(bool loading, ViewportCamera &camera, const SpatialPoint *
                 });
             ImGui::EndDisabled();
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("warp_editor", "Save Project"))
+            if (studio::TutorialWidgets::Button("warp_editor", studio::localization::tr("Save Project")))
                 update([&] {
                     save_editor_project();
                     message_ = "Saved. Stage Project updates game resources.";
                 });
             ImGui::SameLine();
             ImGui::BeginDisabled(index < 0);
-            if (ImGui::Button("Delete entrance"))
+            if (ImGui::Button(studio::localization::tr("Delete entrance")))
                 update([&] {
                     document_->remove(unsigned(index));
                     message_ = "Entrance and trigger deleted. Undo restores them. Staging checks "
@@ -281,7 +283,7 @@ void WarpEditor::draw(bool loading, ViewportCamera &camera, const SpatialPoint *
                     "the selected template. The visible door is separate.");
             ImGui::EndDisabled();
             ImGui::SameLine();
-            if (ImGui::Button("Frame")) {
+            if (ImGui::Button(studio::localization::tr("Frame"))) {
                 auto v = document_->values(unsigned(index));
                 auto low = v.position, high = v.arrival;
                 for (unsigned k = 0; k < 3; ++k) {
@@ -575,11 +577,11 @@ bool WarpEditor::gizmo(const float *view, const float *projection, ImVec2 origin
     }
     if (hovered && drag_axis_ < 0 && !io.WantTextInput && !io.KeyCtrl &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("maps.warp_move", ImGuiKey_G))
             mode_ = mode_ >= 3 ? 3 : mode_ == 1 ? 1 : 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_R) && (mode_ == 0 || mode_ == 2))
+        if (studio::configurable_keys::pressed("maps.warp_rotate", ImGuiKey_R) && (mode_ == 0 || mode_ == 2))
             mode_ = 2;
-        if (ImGui::IsKeyPressed(ImGuiKey_S) && mode_ >= 3)
+        if (studio::configurable_keys::pressed("maps.warp_scale", ImGuiKey_S) && mode_ >= 3)
             mode_ = 4;
     }
     auto values = document_->values(unsigned(index));

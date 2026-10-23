@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/undo_shortcuts.h"
 #include "native/zone_editor.h"
 #include "field/area.h"
@@ -116,7 +117,7 @@ bool ZoneEditor::draw(const Environment *scene, int loaded_zone, bool launcher, 
                 document_->redo();
             ImGui::EndDisabled();
             ImGui::SameLine();
-            if (ImGui::Button("Save Project"))
+            if (ImGui::Button(studio::localization::tr("Save Project")))
                 attempt([&] {
                     save_editor_project();
                 });

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/spatial_overlay.h"
 #include "field/collision_surfaces.h"
@@ -269,7 +270,7 @@ bool SpatialOverlay::controls(ViewportCamera &camera, int loaded_zone, bool deta
             changed = true;
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("spatial_overlay", "Hide all")) {
+        if (studio::TutorialWidgets::Button("spatial_overlay", studio::localization::tr("Hide all"))) {
             enabled.fill(false);
             changed = true;
         }
@@ -297,13 +298,13 @@ bool SpatialOverlay::controls(ViewportCamera &camera, int loaded_zone, bool deta
             }
             ImGui::EndTable();
         }
-        if (studio::TutorialWidgets::CollapsingHeader("spatial_overlay", "Display & selection")) {
+        if (studio::TutorialWidgets::CollapsingHeader("spatial_overlay", studio::localization::tr("Display & selection"))) {
             changed |=
                 studio::TutorialWidgets::Checkbox("spatial_overlay", "See through geometry", &xray);
             changed |=
                 studio::TutorialWidgets::Checkbox("spatial_overlay", "Filled regions", &filled);
             changed |= studio::TutorialWidgets::Checkbox(
-                "spatial_overlay", "Collision attribute colors", &attribute_colors);
+                "spatial_overlay", studio::localization::tr("Collision attribute colors"), &attribute_colors);
             if (filled)
                 changed |= ImGui::SliderFloat("Opacity", &opacity, .03f, .6f, "%.2f");
             changed |= studio::TutorialWidgets::Checkbox(
@@ -366,7 +367,7 @@ bool SpatialOverlay::controls(ViewportCamera &camera, int loaded_zone, bool deta
         if (ImGui::BeginCombo("List", kind_filter_
                                           ? spatial_kind_name(SpatialKind(kind_filter_ - 1))
                                           : "All types")) {
-            if (ImGui::Selectable("All types", !kind_filter_))
+            if (ImGui::Selectable(studio::localization::tr("All types"), !kind_filter_))
                 kind_filter_ = 0;
             for (unsigned i = 0; i < enabled.size(); ++i)
                 if (ImGui::Selectable(spatial_kind_name(SpatialKind(i)),
@@ -450,7 +451,7 @@ bool SpatialOverlay::controls(ViewportCamera &camera, int loaded_zone, bool deta
             camera.bounds_high = scene_->high;
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("spatial_overlay", "Clear region")) {
+        if (studio::TutorialWidgets::Button("spatial_overlay", studio::localization::tr("Clear region"))) {
             selected = -1;
             region = nullptr;
         }
@@ -533,7 +534,7 @@ bool SpatialOverlay::controls(ViewportCamera &camera, int loaded_zone, bool deta
     }
     guide_vertices_.clear();
     if (camera_layer && (!region || !region->overworld) &&
-        studio::TutorialWidgets::CollapsingHeader("spatial_overlay", "Camera settings",
+        studio::TutorialWidgets::CollapsingHeader("spatial_overlay", studio::localization::tr("Camera settings"),
                                                   ImGuiTreeNodeFlags_DefaultOpen)) {
         if (setting) {
             ImGui::Text("%s | priority %d", camera_type(setting->type), setting->priority);

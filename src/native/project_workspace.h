@@ -28,6 +28,9 @@ class ProjectWorkspace {
     void conversations(ConversationEditor &editor) { conversations_ = &editor; }
     void build_current_changes();
     void stage_and_reload();
+    void quick_actions(bool compact = false);
+    std::string active_game_name() const;
+    void file_menu();
     void menu(int area);
     void draw();
     void update();

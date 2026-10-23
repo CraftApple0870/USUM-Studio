@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/scene_browser.h"
 #include <imgui.h>
@@ -164,7 +165,7 @@ void SceneBrowser::draw(const Environment *scene, EnvironmentRenderer &renderer,
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##scene-search", "Find objects or materials...", filter_,
                              sizeof(filter_));
-    if (ImGui::SmallButton("Filters"))
+    if (ImGui::SmallButton(studio::localization::tr("Filters")))
         ImGui::OpenPopup("Scene filters");
     if (ImGui::BeginPopup("Scene filters")) {
         studio::TutorialWidgets::Checkbox("scene_browser", "Material issues only", &problems_only_);
@@ -174,7 +175,7 @@ void SceneBrowser::draw(const Environment *scene, EnvironmentRenderer &renderer,
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear selection")) {
+    if (ImGui::SmallButton(studio::localization::tr("Clear selection"))) {
         selection = {};
         renderer.spatial.selected = -1;
     }
