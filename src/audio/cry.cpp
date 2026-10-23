@@ -253,8 +253,8 @@ MusicSamples decode_cry(View archive) {
     return out;
 }
 Bytes encode_cry(View original, const MusicSamples &mono) {
-    require(mono.channels == 1 && mono.rate == 16000 && !mono.pcm.empty(),
-            "Replacement must be mono 16 kHz audio");
+    require((mono.rate == 16000 || mono.rate == 32728) && mono.channels == 1 && !mono.pcm.empty(),
+            "Replacement must be mono 16,000 Hz or 32,728 Hz audio");
     auto w = wave_info(original);
     auto src = slice(original, w.at, w.size);
     require(w.at == 128 && w.data == 192 && w.samples == 224 && block(original, 0x6800) == 64 &&
@@ -329,9 +329,11 @@ Bytes encode_cry(View original, const MusicSamples &mono) {
     put32(out, 84, narrow(wave.size()));
     return out;
 }
-MusicSamples prepare_cry(const MusicSamples &source, float start, float end, float gain) {
+MusicSamples prepare_cry(const MusicSamples &source, float start, float end, float gain,
+                         unsigned target_rate) {
     require((source.channels == 1 || source.channels == 2) &&
                 source.pcm.size() % source.channels == 0 && source.rate > 0 &&
+                (target_rate == 16000 || target_rate == 32728) &&
                 std::isfinite(start) && std::isfinite(end) && std::isfinite(gain) && start >= 0 &&
                 end > start && gain >= 0 && gain <= 4,
             "Invalid cry trim or gain");
@@ -339,7 +341,7 @@ MusicSamples prepare_cry(const MusicSamples &source, float start, float end, flo
          last = std::min(source.frames(), std::size_t(std::llround(double(end) * source.rate)));
     require(first < last && last <= source.frames(), "Cry trim is outside the source clip");
     MusicSamples out;
-    out.rate = 16000;
+    out.rate = target_rate;
     out.channels = 1;
     auto count = std::size_t(std::llround(double(last - first) * out.rate / source.rate));
     require(count && count <= 70000, "Trim the replacement to about 4.3 seconds or less");

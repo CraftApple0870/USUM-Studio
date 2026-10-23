@@ -33,5 +33,5 @@ class CryLibrary {
 };
 MusicSamples decode_cry(View archive);
 Bytes encode_cry(View original, const MusicSamples &mono);
-MusicSamples prepare_cry(const MusicSamples &source, float start, float end, float gain);
+MusicSamples prepare_cry(const MusicSamples &source, float start, float end, float gain, unsigned target_rate = 16000);
 }
