@@ -35,3 +35,22 @@ target_link_libraries(studio_scene PUBLIC studio_core)
 add_library(studio_map_authoring src/authoring/existing_map_brush.cpp src/authoring/object_export.cpp src/authoring/ground_export.cpp src/authoring/resource_catalog.cpp src/authoring/tile_grid.cpp src/authoring/composition_document.cpp src/authoring/composition_preview.cpp src/authoring/ground_surface.cpp)
 target_link_libraries(studio_map_authoring PUBLIC studio_scene studio_compiler)
 include(cmake/NativeViewport.cmake)
+
+# Optional portable Windows distribution. Does not change how the app is built.
+# On MSVC, InstallRequiredSystemLibraries finds the officially redistributable
+# Visual C++ runtime DLLs from the local Visual Studio installation.
+option(STUDIO_PORTABLE_DISTRIBUTION "Install runtime DLLs with Windows portable package" ON)
+if(WIN32 AND MSVC AND STUDIO_PORTABLE_DISTRIBUTION)
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+  include(InstallRequiredSystemLibraries)
+  if(NOT CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+    message(WARNING "No Visual C++ redistributable DLLs found by CMake. The packaging script will refuse an incomplete package.")
+  else()
+    install(PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION .)
+  endif()
+endif()
+
+# Packaging uses the existing build/bin output created by NativeViewport.cmake.
+install(TARGETS usum-viewport RUNTIME DESTINATION .)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/bin/resources/" DESTINATION resources)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/bin/viewport-shaders/" DESTINATION viewport-shaders)
