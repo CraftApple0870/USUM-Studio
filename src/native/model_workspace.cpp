@@ -1,3 +1,6 @@
+#include "native/activity_log.h"
+#include "native/model_folders.h"
+#include "native/feature_visibility.h"
 #include "native/undo_shortcuts.h"
 #include "native/inspector_selector.h"
 #include "assets/overworld_character_asset.h"
@@ -8,6 +11,9 @@
 #include "native/cry_editor.h"
 #include "native/theme.h"
 #include "native/model_workspace.h"
+#include <cstdio>
+#include <cstring>
+#include "native/localization.h"
 #include "native/imgui_renderer.h"
 #include <SDL3/SDL.h>
 #include <bx/math.h>
@@ -81,6 +87,15 @@ void ModelWorkspace::open_species(const std::filesystem::path &dump, unsigned sp
     pending_shiny_ = shiny;
     refresh(dump, archives);
 }
+void ModelWorkspace::open_library_member(const std::filesystem::path &dump, int category,
+                                         std::size_t member, const ArchiveSources &archives) {
+    if (category < 1 || category > 6) return;
+    category_ = category;
+    dump_ = dump;
+    archive_sources_ = archives;
+    pending_library_member_ = member;
+    refresh_library();
+}
 void ModelWorkspace::open(const PokemonEntry &entry, bool shiny) {
     if (job_.valid())
         return;
@@ -148,6 +163,18 @@ void ModelWorkspace::poll() {
         try {
             library_ = library_job_.get();
             status_ = std::to_string(library_.size()) + " models available";
+            if (pending_library_member_ != std::size_t(-1)) {
+                auto it = std::find_if(library_.begin(), library_.end(), [&](const auto &e) {
+                    return e.member == pending_library_member_;
+                });
+                pending_library_member_ = std::size_t(-1);
+                if (it != library_.end()) {
+                    chosen_ = int(it - library_.begin());
+                    auto path = library_archives_[category_ - 1];
+                    if (path.empty()) path = dump_ / model_category_archive(ModelCategory(category_ - 1));
+                    open_library(path, ModelCategory(category_ - 1), *it);
+                }
+            }
         } catch (const std::exception &e) {
             error_ = e.what();
             status_ = "Model catalog could not be loaded";
@@ -353,14 +380,19 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
             }
         }
     }
-    ImGui::Begin("Model browser");
+    model_aliases().bind(std::filesystem::u8path(dump));
+    model_folders().bind(std::filesystem::u8path(dump));
+    ImGui::Begin(studio::localization::tr("Model browser"));
     static const char *categories[] = {
         "Pokemon",       "Battle characters", "Field characters & props", "Poke Balls",
         "Battle props",  "Poke Beans",        "Battle arena parts",       "Clothing",
         "Battle effects"};
+    const char *translated_categories[9];
+    for (int i = 0; i < 9; ++i)
+        translated_categories[i] = studio::localization::tr(categories[i]);
     ImGui::BeginDisabled(busy || library_dialog_category_ >= 0 || clothing_dialog_slot_ >= 0);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##model-category", &category_, categories, 9)) {
+    if (ImGui::Combo("##model-category", &category_, translated_categories, 9)) {
         chosen_ = -1;
         search_[0] = 0;
         error_.clear();
@@ -386,16 +418,16 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
                   : archives.resolve(std::filesystem::u8path(dump), TargetProfile::pokemon_archive);
     if (category_ && source.empty())
         source = dump_ / model_category_archive(ModelCategory(category_ - 1));
-    if (ImGui::SmallButton("Library options"))
+    if (ImGui::SmallButton(studio::localization::tr("Library options")))
         ImGui::OpenPopup("Model library options");
     if (ImGui::BeginPopup("Model library options")) {
-        if (!project_store() && !category_ && ImGui::Button("Choose source archive")) {
+        if (!project_store() && !category_ && ImGui::Button(studio::localization::tr("Choose source archive"))) {
             inspector_page_ = "Source";
             ImGui::CloseCurrentPopup();
         }
         ImGui::TextWrapped("%s", source.string().c_str());
         ImGui::BeginDisabled(busy || library_dialog_category_ >= 0 || (!*dump && !category_));
-        if (studio::TutorialWidgets::Button("model_workspace", "Refresh catalog")) {
+        if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Refresh catalog"))) {
             if (category_)
                 refresh_library();
             else
@@ -405,12 +437,12 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
         if (category_) {
             ImGui::SameLine();
             if (!project_store() &&
-                studio::TutorialWidgets::Button("model_workspace", "External GARC...")) {
+                studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("External GARC..."))) {
                 library_dialog_category_ = category_ - 1;
                 choose_archive(window_, library_dialog_, source.string().c_str());
             }
             if (!project_store() && !library_archives_[category_ - 1].empty() &&
-                studio::TutorialWidgets::Button("model_workspace", "Use dump archive")) {
+                studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Use dump archive"))) {
                 library_archives_[category_ - 1].clear();
                 refresh_library();
                 busy = true;
@@ -421,17 +453,119 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
     }
     if (job_.valid() || library_job_.valid()) {
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("model_workspace", "Cancel"))
+        if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Cancel")))
             cancel_ = true;
     }
     if (busy)
         ImGui::TextWrapped("%s", status_.c_str());
     if (!error_.empty())
         ImGui::TextWrapped("%s", error_.c_str());
+    // Virtual folders live above the list; clicking a model still opens it immediately.
+    static int selected_folder = 0;
+    static bool include_subfolders = true;
+    static char folder_name[256] = {};
+    static bool folder_create = false;
+    static bool folder_create_child = false;
+    static bool folder_open_editor = false;
+    static bool folder_open_delete = false;
+    static std::string folder_error;
+    const bool folder_fr = studio::localization::current == studio::localization::Language::French;
+    auto &folders = model_folders();
+    if (selected_folder && !folders.find(selected_folder)) selected_folder = 0;
+    if (studio::feature_visibility::folders) {
+    std::string selected_folder_title = folder_fr ? "Tous les modeles" : "All models";
+    if (auto *chosen_folder = folders.find(selected_folder)) selected_folder_title = chosen_folder->name;
+    ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::BeginCombo("##folder_filter", selected_folder_title.c_str())) {
+        if (ImGui::Selectable(folder_fr ? "Tous les modeles##all" : "All models##all", selected_folder == 0))
+            selected_folder = 0;
+        // Indent descendants, while allowing selection of each individual folder.
+        auto draw_folder_tree = [&](auto &&self, int parent, int depth) -> void {
+            if (depth > 32) return;
+            for (const auto &folder : folders.folders()) {
+                if (folder.parent != parent) continue;
+                ImGui::PushID(folder.id);
+                std::string display(std::size_t(depth) * 2, ' ');
+                display += "> " + folder.name;
+                if (ImGui::Selectable(display.c_str(), selected_folder == folder.id))
+                    selected_folder = folder.id;
+                ImGui::PopID();
+                self(self, folder.id, depth + 1);
+            }
+        };
+        draw_folder_tree(draw_folder_tree, 0, 0);
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("...##folder_actions")) ImGui::OpenPopup("##folder_actions_popup");
+    if (ImGui::BeginPopup("##folder_actions_popup")) {
+        if (ImGui::MenuItem(folder_fr ? "Nouveau dossier" : "New folder")) {
+            folder_name[0] = 0; folder_create = true; folder_create_child = false;
+            folder_open_editor = true;
+        }
+        if (selected_folder) {
+            if (ImGui::MenuItem(folder_fr ? "Nouveau sous-dossier" : "New subfolder")) {
+                folder_name[0] = 0; folder_create = true; folder_create_child = true;
+                folder_open_editor = true;
+            }
+            if (ImGui::MenuItem(folder_fr ? "Renommer le dossier" : "Rename folder")) {
+                std::snprintf(folder_name, sizeof(folder_name), "%s", selected_folder_title.c_str());
+                folder_create = false;
+                folder_open_editor = true;
+            }
+            if (ImGui::MenuItem(folder_fr ? "Supprimer le dossier et ses sous-dossiers..." : "Delete folder and subfolders..."))
+                folder_open_delete = true;
+        }
+        ImGui::EndPopup();
+    }
+    // Open modal on a stable parent window after the context menu closes.
+    if (folder_open_editor) { ImGui::OpenPopup("Edit folder###model_folder_editor"); folder_open_editor = false; }
+    if (ImGui::BeginPopupModal("Edit folder###model_folder_editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(folder_fr ? "Nom du dossier" : "Folder name");
+        ImGui::InputText("##folder_name", folder_name, sizeof(folder_name));
+        if (ImGui::Button(folder_fr ? "Enregistrer" : "Save")) {
+            bool success = false;
+            if (folder_create) {
+                int id = folders.create(folder_create_child ? selected_folder : 0, folder_name);
+                success = id > 0;
+                if (success) selected_folder = id;
+            } else success = folders.rename(selected_folder, folder_name);
+            if (success) {
+                studio::activity_log::add("Models/Folders", std::string(folder_create ? "Created folder: " : "Renamed folder: ") + folder_name);
+                folder_error.clear(); ImGui::CloseCurrentPopup();
+            }
+            else folder_error = folder_fr ? "Nom invalide ou echec de sauvegarde" : "Invalid name or save failed";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(folder_fr ? "Annuler" : "Cancel")) ImGui::CloseCurrentPopup();
+        if (!folder_error.empty()) ImGui::TextWrapped("%s", folder_error.c_str());
+        ImGui::EndPopup();
+    }
+    if (folder_open_delete) { ImGui::OpenPopup("Delete folder###model_folder_delete"); folder_open_delete = false; }
+    if (ImGui::BeginPopupModal("Delete folder###model_folder_delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s", folder_fr ?
+            "Supprimer ce dossier et ses sous-dossiers ? Les modeles du jeu ne seront pas supprimes." :
+            "Delete this folder and its subfolders? Game models will not be deleted.");
+        if (ImGui::Button(folder_fr ? "Confirmer" : "Confirm")) {
+            if (folders.remove(selected_folder)) {
+                studio::activity_log::add("Models/Folders", "Deleted folder and descendants: " + selected_folder_title);
+                selected_folder = 0; folder_error.clear(); ImGui::CloseCurrentPopup();
+            }
+            else folder_error = folder_fr ? "Echec de sauvegarde" : "Save failed";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(folder_fr ? "Annuler" : "Cancel")) ImGui::CloseCurrentPopup();
+        if (!folder_error.empty()) ImGui::TextWrapped("%s", folder_error.c_str());
+        ImGui::EndPopup();
+    }
+    if (selected_folder)
+        ImGui::Checkbox(folder_fr ? "Inclure les sous-dossiers" : "Include subfolders", &include_subfolders);
+    if (!folder_error.empty()) ImGui::TextDisabled("%s", folder_error.c_str());
+    } // folder controls (data remains untouched while disabled)
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##model-search",
-                             category_ ? "Search resource name or member"
-                                       : "Search name, species number or form",
+                             category_ ? studio::localization::tr("Search resource name or member")
+                                       : studio::localization::tr("Search name, species number or form"),
                              search_, sizeof(search_));
     auto open_selected = [&] {
         if (category_)
@@ -442,26 +576,47 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
     auto count = category_ ? library_.size() : catalog_.size();
     ImGui::BeginDisabled(busy || stale || library_dialog_category_ >= 0);
     if (!category_ &&
-        studio::TutorialWidgets::Checkbox("model_workspace", "Shiny textures", &shiny_) &&
+        studio::TutorialWidgets::Checkbox("model_workspace", studio::localization::tr("Shiny textures"), &shiny_) &&
         chosen_ >= 0 && std::size_t(chosen_) < count)
         open_selected();
     ImGui::EndDisabled();
     ImGui::BeginDisabled(busy || stale || library_dialog_category_ >= 0);
+    static bool favorites_only = false;
+    const bool fr_fav = studio::localization::current == studio::localization::Language::French;
+    if (studio::feature_visibility::favorites) {
+    if (ImGui::Checkbox(fr_fav ? "Favoris uniquement##model_favorites_only" :
+                                "Favorites only##model_favorites_only", &favorites_only)) {}
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", fr_fav ?
+        "Afficher uniquement les modeles favoris de cette categorie" :
+        "Show only favorite models in this category");
+    } // favorites toggle
     ImGui::BeginChild("Model list", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    // Filtering never changes the actual model identity or its GARC member.
+    // The toggle is shared by all model categories (Pokemon and other model libraries).
     auto filter = lower(search_);
     std::vector<int> matches;
+    auto model_key = [&](int i) {
+        return category_ ? ModelAliases::library_key(category_, library_[i].member)
+                         : ModelAliases::pokemon_key(catalog_[i].data_index);
+    };
     auto label = [&](int i) {
-        return category_ ? library_[i].name + " / " + std::to_string(library_[i].member)
-                         : catalog_[i].label;
+        auto alias = studio::feature_visibility::renaming ? model_aliases().get(model_key(i)) : std::string{};
+        std::string id = category_ ? std::to_string(library_[i].member)
+                                   : std::to_string(catalog_[i].data_index);
+        std::string original = category_ ? library_[i].name : catalog_[i].label;
+        return (studio::feature_visibility::model_ids ? "[" + id + "] " : "") +
+               (alias.empty() ? original : alias + " (" + original + ")");
     };
     for (unsigned i = 0; i < count; ++i)
-        if (filter.empty() || lower(label(i)).find(filter) != std::string::npos)
+        if ((!studio::feature_visibility::folders || !selected_folder || folders.contains(model_key(int(i)), selected_folder, include_subfolders)) &&
+            (!studio::feature_visibility::favorites || !favorites_only || model_aliases().is_favorite(model_key(int(i)))) &&
+            (filter.empty() || lower(label(int(i))).find(filter) != std::string::npos))
             matches.push_back(int(i));
     if (matches.empty() && !busy)
         ImGui::TextWrapped("%s",
-                           count ? "No matching models."
+                           count ? studio::localization::tr("No matching models.")
                            : !error_.empty() ? error_.c_str()
-                                 : "No models found for this category. Check the source archive.");
+                                 : studio::localization::tr("No models found for this category. Check the source archive."));
     // Navigate the visible (filtered) model list with the Up/Down arrow keys.
     // Only react while the list itself has keyboard focus, so the search field
     // and other controls retain their normal keyboard behavior.
@@ -485,17 +640,169 @@ void ModelWorkspace::browse(const char *dump, const ArchiveSources &archives) {
             ImGui::SetScrollY(float(next_row) * ImGui::GetTextLineHeightWithSpacing());
         }
     }
+    // Rename locally: the original model name and its member/index remain unchanged.
+    static std::string editing_key;
+    static int alias_edit_index = -1;
+    static char alias_edit_text[256] = {};
+    static std::string alias_error;
+    if (alias_edit_index >= 0 && std::size_t(alias_edit_index) >= count) alias_edit_index = -1;
+    if (alias_edit_index >= 0) {
+        ImGui::OpenPopup("Edit model alias###model_alias_dialog");
+        alias_edit_index = -2; // Keep the popup open after the initial frame.
+    }
+    if (studio::feature_visibility::renaming && ImGui::BeginPopupModal("Edit model alias###model_alias_dialog", nullptr,
+                              ImGuiWindowFlags_AlwaysAutoResize)) {
+        // editing_key is set immediately when the context-menu action is clicked below.
+        ImGui::InputText("##model_alias", alias_edit_text, sizeof(alias_edit_text));
+        if (ImGui::Button(studio::localization::current == studio::localization::Language::French
+                              ? "Enregistrer" : "Save")) {
+            if (model_aliases().set(editing_key, alias_edit_text)) {
+                studio::activity_log::add("Models/Alias", "Saved local name [" + editing_key + "]: " + alias_edit_text);
+                alias_error.clear(); ImGui::CloseCurrentPopup();
+            } else alias_error = "Cannot write local model alias file";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(studio::localization::current == studio::localization::Language::French
+                              ? "Reinitialiser" : "Reset")) {
+            if (model_aliases().set(editing_key, {})) {
+                studio::activity_log::add("Models/Alias", "Restored original name [" + editing_key + "]");
+                alias_error.clear(); ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(studio::localization::current == studio::localization::Language::French
+                              ? "Annuler" : "Cancel")) ImGui::CloseCurrentPopup();
+        if (!alias_error.empty()) ImGui::TextWrapped("%s", alias_error.c_str());
+        ImGui::EndPopup();
+    }
+    // Selection uses stable model keys: filters and sorting never change identity.
+    static std::vector<std::string> multi_keys;
+    static int multi_anchor = -1;
+    static int multi_category = -1;
+    if (multi_category != category_) { multi_keys.clear(); multi_anchor = -1; multi_category = category_; }
+    auto in_multi = [&](const std::string &key) {
+        return std::find(multi_keys.begin(), multi_keys.end(), key) != multi_keys.end();
+    };
+    auto select_multi = [&](const std::string &key, bool selected) {
+        auto it = std::find(multi_keys.begin(), multi_keys.end(), key);
+        if (selected && it == multi_keys.end()) multi_keys.push_back(key);
+        else if (!selected && it != multi_keys.end()) multi_keys.erase(it);
+    };
+    if (!multi_keys.empty()) {
+        ImGui::TextDisabled("%zu %s", multi_keys.size(), folder_fr ? "selectionnes" : "selected");
+        ImGui::SameLine();
+        if (ImGui::SmallButton(folder_fr ? "Vider la selection" : "Clear selection")) multi_keys.clear();
+        if (studio::feature_visibility::favorites) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton(folder_fr ? "Ajouter aux favoris" : "Favorite selected")) {
+                int successes = 0;
+                for (const auto &key : multi_keys)
+                    if (model_aliases().set_favorite(key, true, key)) ++successes;
+                studio::activity_log::add("Models/Favorites", "Batch favorites: " + std::to_string(successes));
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(folder_fr ? "Retirer des favoris" : "Unfavorite selected")) {
+                int successes = 0;
+                for (const auto &key : multi_keys)
+                    if (model_aliases().set_favorite(key, false, key)) ++successes;
+                studio::activity_log::add("Models/Favorites", "Batch unfavorites: " + std::to_string(successes));
+            }
+        }
+        if (studio::feature_visibility::folders && ImGui::BeginCombo("##multi_folder", folder_fr ? "Classer la selection..." : "Move selection to folder...")) {
+            for (const auto &folder : folders.folders()) {
+                if (ImGui::Selectable(folder.name.c_str())) {
+                    int successes = 0;
+                    for (const auto &key : multi_keys)
+                        if (folders.set_member(key, folder.id, true)) ++successes;
+                    studio::activity_log::add("Models/Folders", "Batch folder assignment: " + std::to_string(successes));
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::Separator();
+    }
     ImGuiListClipper clipper;
     clipper.Begin(int(matches.size()));
     while (clipper.Step())
         for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
             int i = matches[row];
             ImGui::PushID(i);
-            if (ImGui::Selectable(label(i).c_str(), chosen_ == i,
+            const auto key = model_key(i);
+            bool favorite = model_aliases().is_favorite(key);
+            if (studio::feature_visibility::favorites) {
+            if (ImGui::SmallButton(favorite ? "*##fav" : "+##fav")) {
+                const std::string original = category_ ? library_[i].name : catalog_[i].label;
+                if (!model_aliases().set_favorite(key, !favorite, original))
+                    alias_error = fr_fav ? "Impossible d'enregistrer les favoris" :
+                                           "Cannot save favorites";
+                else studio::activity_log::add("Models/Favorites",
+                    std::string(!favorite ? "Added favorite: " : "Removed favorite: ") + original);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", favorite ?
+                (fr_fav ? "Retirer des favoris" : "Remove from favorites") :
+                (fr_fav ? "Ajouter aux favoris" : "Add to favorites"));
+            ImGui::SameLine();
+            } // favorite icon
+            const bool marked = in_multi(key);
+            if (ImGui::Selectable(label(i).c_str(), marked || (multi_keys.empty() && chosen_ == i),
                                   ImGuiSelectableFlags_AllowDoubleClick)) {
-                chosen_ = i;
-                if (!busy && !stale && library_dialog_category_ < 0)
-                    open_selected();
+                const auto &io = ImGui::GetIO();
+                if (io.KeyShift && multi_anchor >= 0) {
+                    auto anchor = std::find(matches.begin(), matches.end(), multi_anchor);
+                    auto current = std::find(matches.begin(), matches.end(), i);
+                    if (anchor != matches.end() && current != matches.end()) {
+                        const auto a = int(anchor - matches.begin());
+                        const auto b = int(current - matches.begin());
+                        for (int n = std::min(a, b); n <= std::max(a, b); ++n)
+                            select_multi(model_key(matches[n]), true);
+                    } else select_multi(key, true);
+                } else if (io.KeyCtrl) {
+                    select_multi(key, !marked);
+                    multi_anchor = i;
+                } else {
+                    multi_keys.clear();
+                    multi_anchor = i;
+                    chosen_ = i;
+                    if (!busy && !stale && library_dialog_category_ < 0)
+                        open_selected();
+                }
+            }
+            if (ImGui::BeginPopupContextItem("##model_alias_context")) {
+                if (studio::feature_visibility::favorites && ImGui::MenuItem(favorite ? (fr_fav ? "Retirer des favoris" : "Remove from favorites") :
+                                               (fr_fav ? "Ajouter aux favoris" : "Add to favorites"))) {
+                    const std::string original = category_ ? library_[i].name : catalog_[i].label;
+                    if (!model_aliases().set_favorite(key, !favorite, original))
+                        alias_error = fr_fav ? "Impossible d'enregistrer les favoris" :
+                                               "Cannot save favorites";
+                    else studio::activity_log::add("Models/Favorites",
+                        std::string(!favorite ? "Added favorite: " : "Removed favorite: ") + original);
+                }
+                if (studio::feature_visibility::folders && ImGui::BeginMenu(folder_fr ? "Classer dans un dossier" : "Add to folder")) {
+                    for (const auto &folder : folders.folders()) {
+                        bool checked = folders.direct_member(key, folder.id);
+                        ImGui::PushID(folder.id);
+                        if (ImGui::MenuItem(folder.name.c_str(), nullptr, checked)) {
+                            if (!folders.set_member(key, folder.id, !checked))
+                                folder_error = folder_fr ? "Impossible d'enregistrer le classement" : "Cannot save folder membership";
+                            else studio::activity_log::add("Models/Folders",
+                                std::string(checked ? "Removed [" : "Added [") + key +
+                                (checked ? "] from folder: " : "] to folder: ") + folder.name);
+                        }
+                        ImGui::PopID();
+                    }
+                    if (folders.folders().empty())
+                        ImGui::TextDisabled("%s", folder_fr ? "Creez d'abord un dossier" : "Create a folder first");
+                    ImGui::EndMenu();
+                }
+                if (studio::feature_visibility::renaming && ImGui::MenuItem(studio::localization::current == studio::localization::Language::French
+                                        ? "Renommer (local)" : "Rename (local)")) {
+                    editing_key = model_key(i);
+                    std::snprintf(alias_edit_text, sizeof(alias_edit_text), "%s",
+                                  model_aliases().get(editing_key).c_str());
+                    alias_edit_index = i;
+                    alias_error.clear();
+                }
+                ImGui::EndPopup();
             }
             ImGui::PopID();
         }
@@ -585,7 +892,7 @@ void ModelWorkspace::draw(std::uint32_t frame, const char *dump, const ArchiveSo
         if (document_) {
             if (ImGui::BeginTabBar("Model information")) {
                 if (studio::TutorialWidgets::BeginTabItem("model_workspace",
-                                                          "Source & dependencies")) {
+                                                          studio::localization::tr("Source & dependencies"))) {
                     ImGui::TextWrapped("%s", document_->name.c_str());
                     ImGui::TextWrapped("Dump: %s", document_->dump.string().c_str());
                     ImGui::TextWrapped(
@@ -611,7 +918,7 @@ void ModelWorkspace::draw(std::uint32_t frame, const char *dump, const ArchiveSo
                     }
                     ImGui::EndTabItem();
                 }
-                if (studio::TutorialWidgets::BeginTabItem("model_workspace", "Preview coverage")) {
+                if (studio::TutorialWidgets::BeginTabItem("model_workspace", studio::localization::tr("Preview coverage"))) {
                     for (auto &d : document_->scene->diagnostics) {
                         ImGui::Bullet();
                         ImGui::SameLine();
@@ -883,7 +1190,7 @@ void ModelWorkspace::details() {
             settings_editor_.draw();
         }
         if (begin_page("Meshes")) {
-            if (studio::TutorialWidgets::Button("model_workspace", "Frame model"))
+            if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Frame model")))
                 fit();
             ImGui::SameLine();
             if (studio::TutorialWidgets::Button("model_workspace", "Show all"))
@@ -938,7 +1245,7 @@ void ModelWorkspace::details() {
                                     d.indices.size() / 3);
                 ImGui::Text("Material: %s", scene.materials[d.material].name.c_str());
                 ImGui::Text("Bone palette: %zu", d.palette.size());
-                if (studio::TutorialWidgets::Button("model_workspace", "Frame mesh"))
+                if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Frame mesh")))
                     fit(selection_.draw);
                 ImGui::SameLine();
                 if (studio::TutorialWidgets::Button("model_workspace", "Isolate")) {
@@ -1080,7 +1387,7 @@ void ModelWorkspace::details() {
         }
         if (begin_page("Lighting")) {
             ImGui::TextWrapped("Preview controls; these do not change game materials.");
-            studio::TutorialWidgets::Checkbox("model_workspace", "Lighting",
+            studio::TutorialWidgets::Checkbox("model_workspace", studio::localization::tr("Lighting"),
                                               &renderer_.lighting.enabled);
             if (studio::TutorialWidgets::Button("model_workspace", "Soft studio preset")) {
                 renderer_.lighting.soft = true;
@@ -1167,7 +1474,7 @@ void ModelWorkspace::asset_actions(const std::filesystem::path &dump) {
             std::snprintf(object_name_.data(), object_name_.size(), "%s", name.c_str());
             publish_object = true;
         }
-        if (ImGui::MenuItem("Create overworld character...", nullptr, false, document_ && can_convert_overworld_character(*document_)))
+        if (ImGui::MenuItem(studio::localization::tr("Create overworld character..."), nullptr, false, document_ && can_convert_overworld_character(*document_)))
             inspector_page_ = "Overworld character";
         if (ImGui::MenuItem("Close model", nullptr, false, bool(document_))) editor_->request_leave([this] {
             editor_->clear(); document_.reset(); renderer_.set_scene(std::make_shared<Environment>()); selection_ = {};
@@ -1193,7 +1500,7 @@ void ModelWorkspace::asset_actions(const std::filesystem::path &dump) {
                 } catch (const std::exception &e) { error_ = e.what(); }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            if (ImGui::Button(studio::localization::tr("Cancel"))) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
     object_import_dialog(dump);
@@ -1293,7 +1600,7 @@ void ModelWorkspace::object_import_dialog(const std::filesystem::path &dump) {
         }
         ImGui::SameLine();
     } else ImGui::TextWrapped("No static templates found. Add a native object to the project library first.");
-    if (ImGui::Button("Cancel")) {
+    if (ImGui::Button(studio::localization::tr("Cancel"))) {
         new_object_geometry_.reset(); new_object_template_.reset(); object_templates_.clear();
         ImGui::CloseCurrentPopup();
     }
@@ -1349,7 +1656,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
         return;
     }
     {
-        if (ImGui::Button("Frame"))
+        if (ImGui::Button(studio::localization::tr("Frame")))
             fit(selection_.draw);
         ImGui::SameLine();
         if (pokemon_preview_available) {
@@ -1411,7 +1718,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
             }
             ImGui::SameLine();
         }
-        if (ImGui::Button("Animation"))
+        if (ImGui::Button(studio::localization::tr("Animation")))
             animation_controls_open_ = !animation_controls_open_;
         ImGui::SameLine();
         if (ImGui::Button(renderer_.shading_view == ShadingView::Shaded ? "Display" : "Display *"))
@@ -1419,7 +1726,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
         if (renderer_.shading_view != ShadingView::Shaded && ImGui::IsItemHovered())
             ImGui::SetTooltip("Shading inspection is active. Open Display to change views or return to shaded.");
         ImGui::SameLine();
-        if (ImGui::Button("Controls"))
+        if (ImGui::Button(studio::localization::tr("Controls")))
             ImGui::OpenPopup("Model navigation");
         if (ImGui::BeginPopup("Model navigation")) {
             ImGui::TextUnformatted(viewport_navigation_help);
@@ -1451,7 +1758,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
             if (studio::TutorialWidgets::Button("model_workspace", playing_ ? "Pause" : "Play"))
                 playing_ = !playing_;
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("model_workspace", "Restart"))
+            if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Restart")))
                 renderer_.playback.seconds = 0;
             ImGui::SameLine();
             if (studio::TutorialWidgets::Checkbox("model_workspace", "Repeat", &repeat_) &&
@@ -1484,7 +1791,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
                                           ? "Bind pose"
                                           : document_->motions[document_->motion].name.c_str();
                 if (ImGui::BeginCombo("Motion", current)) {
-                    if (ImGui::Selectable("Bind pose", document_->motion < 0)) {
+                    if (ImGui::Selectable(studio::localization::tr("Bind pose"), document_->motion < 0)) {
                         select_motion(-1);
                         renderer_.playback.seconds = 0;
                     }
@@ -1506,7 +1813,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
                 }
             }
             if (document_->is_pokemon()) {
-                if (studio::TutorialWidgets::Checkbox("model_workspace", "Looping effects",
+                if (studio::TutorialWidgets::Checkbox("model_workspace", studio::localization::tr("Looping effects"),
                                                       &document_->looping_effects))
                     select_motion(document_->motion);
                 if (ImGui::IsItemHovered())
@@ -1649,13 +1956,13 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
                 renderer_.background_color = (std::uint32_t(color[0] * 255 + .5f) << 24) |
                                              (std::uint32_t(color[1] * 255 + .5f) << 16) |
                                              (std::uint32_t(color[2] * 255 + .5f) << 8) | 255u;
-            if (studio::TutorialWidgets::Button("model_workspace", "Dark"))
+            if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Dark")))
                 renderer_.background_color = 0x17232bffu;
             ImGui::SameLine();
             if (studio::TutorialWidgets::Button("model_workspace", "Gray"))
                 renderer_.background_color = 0x808080ffu;
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("model_workspace", "Light"))
+            if (studio::TutorialWidgets::Button("model_workspace", studio::localization::tr("Light")))
                 renderer_.background_color = 0xe8e8e8ffu;
             ImGui::TextUnformatted("Preview only");
             ImGui::EndPopup();
@@ -1750,7 +2057,7 @@ void ModelWorkspace::viewport(std::uint32_t frame) {
         if (ImGui::Button(playing_ ? "Pause" : "Play"))
             playing_ = !playing_;
         ImGui::SameLine();
-        if (ImGui::Button("Restart"))
+        if (ImGui::Button(studio::localization::tr("Restart")))
             renderer_.playback.seconds = 0;
         ImGui::SameLine();
         time_slider();

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/material_inspector.h"
 #include "native/imgui_renderer.h"
@@ -89,7 +90,7 @@ void material_inspector(const Environment *scene, const EnvironmentRenderer &ren
         ImGui::TextWrapped("%s", scene->draws[selection.draw].name.c_str());
     if (!embedded)
         ImGui::TextDisabled("Material instance %d", selection.material);
-    if (!embedded && studio::TutorialWidgets::Button("material_inspector", "Clear selection")) {
+    if (!embedded && studio::TutorialWidgets::Button("material_inspector", studio::localization::tr("Clear selection"))) {
         selection.material = selection.draw = -1;
         if (!embedded)
             ImGui::End();
@@ -183,7 +184,7 @@ void material_inspector(const Environment *scene, const EnvironmentRenderer &ren
                 }
                 ImGui::PopID();
             }
-    if (studio::TutorialWidgets::CollapsingHeader("material_inspector", "Animation tracks",
+    if (studio::TutorialWidgets::CollapsingHeader("material_inspector", studio::localization::tr("Animation tracks"),
                                                   embedded ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
         bool any = false;
         for (auto &animation : scene->material_animations) {
@@ -212,7 +213,7 @@ void material_inspector(const Environment *scene, const EnvironmentRenderer &ren
                 }
         }
         if (!any)
-            ImGui::TextUnformatted("No bound material tracks");
+            ImGui::TextUnformatted(studio::localization::tr("No bound material tracks"));
         if (!renderer.playback.enabled)
             ImGui::TextDisabled("Animation disabled; showing base values");
     }

@@ -1,5 +1,6 @@
 #pragma once
 #include "native/studio_resource_browser.h"
+#include "native/model_aliases.h"
 #include "assets/asset_package.h"
 #include "native/uv_motion_editor.h"
 #include "assets/model_document.h"
@@ -48,6 +49,8 @@ class ModelWorkspace {
     void draw(std::uint32_t frame, const char *dump, const ArchiveSources &archives = {});
     void open_species(const std::filesystem::path &dump, unsigned species, unsigned form = 0,
                       bool female = false, bool shiny = false, const ArchiveSources &archives = {});
+    void open_library_member(const std::filesystem::path &dump, int category,
+                             std::size_t member, const ArchiveSources &archives = {});
     void open_document(ModelDocument document);
     bool source_details_visible() const {
         return inspector_page_ == "Source";
@@ -192,6 +195,7 @@ class ModelWorkspace {
     std::atomic_bool cancel_ = false;
     std::string error_, status_ = "Choose a dump folder, then browse Pokemon.";
     char search_[128]{}, bone_search_[128]{};
+    std::size_t pending_library_member_ = std::size_t(-1);
     int chosen_ = -1, motion_group_ = 0, bone_ = -1;
     bool animation_controls_open_ = false;
     bool shiny_ = false, playing_ = true, repeat_ = true, show_bones_ = false;

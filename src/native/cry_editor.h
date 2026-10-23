@@ -43,5 +43,6 @@ class CryEditor {
     std::vector<std::string> uses_;
     std::string error_, notice_, import_name_;
     float volume_ = .5f, trim_start_ = 0, trim_end_ = 0, gain_ = 1;
+    int replacement_rate_ = 0; // 0: 16000 Hz (default), 1: 32728 Hz (experimental)
 };
 }

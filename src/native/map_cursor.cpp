@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/map_cursor.h"
 #include "scene/refresh_surface.h"
@@ -46,7 +47,7 @@ void MapCursor::draw(const Environment *scene, ViewportCamera &camera, bool show
     if (studio::TutorialWidgets::Button("map_cursor", "Frame cursor"))
         camera.target = position_;
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("map_cursor", "Copy XYZ")) {
+    if (studio::TutorialWidgets::Button("map_cursor", studio::localization::tr("Copy XYZ"))) {
         char text[160];
         std::snprintf(text, sizeof(text), "%.3f, %.3f, %.3f", position_[0], position_[1],
                       position_[2]);

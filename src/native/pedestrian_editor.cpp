@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/undo_shortcuts.h"
 #include "native/pedestrian_editor.h"
@@ -352,7 +353,7 @@ void PedestrianEditor::draw(ViewportCamera &camera) {
         return;
     }
     ImGui::BeginDisabled(!project_store());
-    if (ImGui::Button("Save Project"))
+    if (ImGui::Button(studio::localization::tr("Save Project")))
         try {
             save_editor_project();
         } catch (const std::exception &e) {
@@ -406,7 +407,7 @@ void PedestrianEditor::draw(ViewportCamera &camera) {
         ImGui::BeginDisabled(!project_store());
         bool changed = ImGui::Checkbox("Curved path", &draft_.path.curved);
         ImGui::SameLine();
-        changed |= ImGui::Checkbox("Loop", &draft_.path.loop);
+        changed |= ImGui::Checkbox(studio::localization::tr("Loop"), &draft_.path.loop);
         changed |= ImGui::Checkbox("Follow ground in game", &draft_.path.follow_ground);
         if (changed)
             apply();
@@ -439,7 +440,7 @@ void PedestrianEditor::draw(ViewportCamera &camera) {
             ImGui::BeginDisabled(draft_.path.points.size() +
                                      (draft_.path.loop && !draft_.path.curved ? 1 : 0) >=
                                  TargetProfile::pedestrian_point_capacity);
-            if (ImGui::Button("Insert after")) {
+            if (ImGui::Button(studio::localization::tr("Insert after"))) {
                 auto p = draft_.path.points[point_];
                 auto next = (point_ + 1) % draft_.path.points.size();
                 if (next || draft_.path.loop)
@@ -535,7 +536,7 @@ void PedestrianEditor::draw(ViewportCamera &camera) {
             reveal();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Restart")) {
+        if (ImGui::Button(studio::localization::tr("Restart"))) {
             progress_ = reverse_ ? 1.f : 0.f;
             seconds_ = 0;
             reveal();
@@ -543,7 +544,7 @@ void PedestrianEditor::draw(ViewportCamera &camera) {
         ImGui::SameLine();
         ImGui::Checkbox("Reverse", &reverse_);
         ImGui::SameLine();
-        if (ImGui::Button("Frame preview")) {
+        if (ImGui::Button(studio::localization::tr("Frame preview"))) {
             auto p = preview_position(), low = p, high = p;
             low[0] -= 120;
             low[2] -= 120;

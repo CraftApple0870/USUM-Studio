@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "inspector_selector.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
@@ -472,7 +473,7 @@ void CollisionEditor::layers(bool locked) {
         ImGui::PopID();
     }
     ImGui::Separator();
-    if (ImGui::CollapsingHeader("Display")) {
+    if (ImGui::CollapsingHeader(studio::localization::tr("Display"))) {
         studio::TutorialWidgets::Checkbox("collision_editor", "Show map scenery", &context_);
         studio::TutorialWidgets::Checkbox("collision_editor", "See through scenery", &xray_);
         studio::TutorialWidgets::Checkbox("collision_editor", "Filled collision", &filled_);
@@ -526,7 +527,7 @@ void CollisionEditor::layers(bool locked) {
         select_all();
     if (studio::TutorialWidgets::Button("collision_editor", "Select connected"))
         select_connected();
-    if (studio::TutorialWidgets::Button("collision_editor", "Clear selection")) {
+    if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Clear selection"))) {
         selection_.clear();
         vertices_.clear();
     }
@@ -534,7 +535,7 @@ void CollisionEditor::layers(bool locked) {
     if (ImGui::TreeNode("Blender exchange")) {
         studio::TutorialWidgets::Checkbox("collision_editor", "Include map reference geometry",
                                           &export_reference_);
-        if (studio::TutorialWidgets::Button("collision_editor", "Export collision OBJ..."))
+        if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Export collision OBJ...")))
             dialog(4);
         if (studio::TutorialWidgets::Button("collision_editor", "Import edited OBJ..."))
             dialog(5);
@@ -596,10 +597,10 @@ void CollisionEditor::toolbar(bool locked) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("5 units / 15 degrees; Ctrl while dragging also snaps");
     next_control(115);
-    if (studio::TutorialWidgets::Button("collision_editor", "Frame selection"))
+    if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Frame selection")))
         frame_selection();
     next_control(75);
-    if (studio::TutorialWidgets::Button("collision_editor", "Frame map"))
+    if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Frame map")))
         frame_selection(true);
     ImGui::EndDisabled();
 }
@@ -631,7 +632,7 @@ void CollisionEditor::inspector(bool locked) {
         if (studio::TutorialWidgets::Button("collision_editor",
                                             project_store() ? "Save Project" : "Save patch"))
             save();
-        if (ImGui::CollapsingHeader("Document actions")) {
+        if (ImGui::CollapsingHeader(studio::localization::tr("Document actions"))) {
             if (!project_store() &&
                 studio::TutorialWidgets::Button("collision_editor", "Save as..."))
                 dialog(1);
@@ -642,7 +643,7 @@ void CollisionEditor::inspector(bool locked) {
                 });
             if (!authored_changed_) {
                 ImGui::BeginDisabled(!document_->changed());
-                if (studio::TutorialWidgets::Button("collision_editor", "Export override..."))
+                if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Export override...")))
                     dialog(3);
                 ImGui::EndDisabled();
             } else
@@ -728,7 +729,7 @@ void CollisionEditor::inspector(bool locked) {
                     attribute.reset();
             }
         }
-        ImGui::TextUnformatted("Collision type");
+        ImGui::TextUnformatted(studio::localization::tr("Collision type"));
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##kind", kind ? layer_names[unsigned(*kind)] : "Mixed / none")) {
             for (unsigned i = 0; i < 5; ++i)
@@ -745,7 +746,7 @@ void CollisionEditor::inspector(bool locked) {
             ImGui::SetTooltip(
                 "Type changes move triangles between ground and wall resources on export.");
         ImGui::BeginDisabled(!ground);
-        ImGui::TextUnformatted("Ground surface");
+        ImGui::TextUnformatted(studio::localization::tr("Ground surface"));
         auto label = attribute ? collision_surface_name(*attribute) : "Mixed / none";
         if (attribute) {
             auto color = collision_surface_color(*attribute);
@@ -818,14 +819,14 @@ void CollisionEditor::modal() {
             }
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("collision_editor", "Discard")) {
+        if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Discard"))) {
             ImGui::CloseCurrentPopup();
             auto action = std::move(leave_action_);
             if (action)
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("collision_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("collision_editor", studio::localization::tr("Cancel"))) {
             ImGui::CloseCurrentPopup();
             leave_action_ = {};
         }
@@ -920,7 +921,7 @@ bool CollisionEditor::draw_workspace(bool loading) {
         ImGui::TextUnformatted("Loading map; collision editing is paused.");
     if (!message_.empty())
         ImGui::TextWrapped("%s", message_.c_str());
-    if (ImGui::CollapsingHeader("Controls")) {
+    if (ImGui::CollapsingHeader(studio::localization::tr("Controls"))) {
         ImGui::TextWrapped(
             "Click selects; Ctrl adds/removes. 1/2: triangles/vertices. G/R: move/rotate. B: box. "
             "Ctrl snaps; Escape cancels.");

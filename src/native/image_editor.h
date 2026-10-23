@@ -7,6 +7,7 @@
 #include <atomic>
 #include <future>
 #include <memory>
+#include <set>
 #include <imgui.h>
 namespace studio {
 class ImageEditor {
@@ -21,7 +22,7 @@ class ImageEditor {
   private:
     ProjectBinding project_;
     void bind_project();
-    enum class Action { Import, ExportPng, Save, Load, Export };
+    enum class Action { Import, ExportPng, ResizePng, Save, Load, Export, ExportSelectedPng };
     void import_file(const std::filesystem::path &file);
     void choose(Action action);
     void scan(const std::filesystem::path &dump);
@@ -39,6 +40,13 @@ class ImageEditor {
     std::atomic<bool> cancel_ = false;
     std::map<std::size_t, bgfx::TextureHandle> thumbnails_;
     bgfx::TextureHandle preview_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle compare_original_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle compare_current_ = BGFX_INVALID_HANDLE;
+    bool compare_open_ = false;
+    std::size_t compare_index_ = std::size_t(-1);
+    float compare_zoom_ = 1.0f;
+    std::set<std::size_t> multiple_selection_;
+    std::size_t selection_anchor_ = std::size_t(-1);
     std::shared_ptr<FolderSelection> dialog_ = std::make_shared<FolderSelection>();
     Action action_ = Action::Import;
     std::function<void()> leave_;
@@ -52,6 +60,10 @@ class ImageEditor {
     float zoom_ = 1;
     ImVec2 pan_{};
     bool original_ = false, grid_ = false, checker_ = true;
+    bool auto_resize_png_ = false;
+    int resize_filter_ = 0;
+    int manual_width_ = 0, manual_height_ = 0;
+    int manual_filter_ = 0;
     float background_[3] = {.18f, .20f, .23f};
 };
 }

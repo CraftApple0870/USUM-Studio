@@ -2,6 +2,7 @@
 #include "formats/archive.h"
 #include "native/project_binding.h"
 #include "native/localization.h"
+#include "native/data_names.h"
 #include "field/map_catalog.h"
 #include <imgui.h>
 #include <algorithm>
@@ -47,25 +48,26 @@ class EvolutionDataViewer {
         return b;
     }
     static const char *method_name(int m) {
-        static constexpr const char *names[] = {
-            "Aucune", "Bonheur", "Bonheur (matin)", "Bonheur (nuit)", "Niveau",
-            "Echange", "Echange avec objet", "Echange special", "Objet utilise",
+        const char *names[] = {
+            studio::localization::bilingual("None", "Aucune"), studio::localization::bilingual("Friendship", "Bonheur"), studio::localization::bilingual("Friendship (morning)", "Bonheur (matin)"), studio::localization::bilingual("Friendship (night)", "Bonheur (nuit)"), studio::localization::bilingual("Level", "Niveau"),
+            studio::localization::bilingual("Trade", "Echange"), studio::localization::bilingual("Trade holding item", "Echange avec objet"), studio::localization::bilingual("Special trade", "Echange special"), studio::localization::bilingual("Use item", "Objet utilise"),
             "Niveau Att > Def", "Niveau Att = Def", "Niveau Att < Def", "Niveau aleatoire A",
-            "Niveau aleatoire B", "Niveau Ninjask", "Niveau Munja", "Beaute",
-            "Objet (male)", "Objet (femelle)", "Objet tenu (jour)", "Objet tenu (nuit)",
-            "Capacite connue", "Pokemon dans equipe", "Niveau (male)", "Niveau (femelle)",
-            "Lieu electrique", "Lieu foret", "Lieu froid", "3DS retournee", "Affection et type",
-            "Type dans equipe", "Pluie", "Niveau (matin)", "Niveau (nuit)",
-            "Niveau femelle (forme 1)", "Inutilise", "Niveau version", "Niveau jour/version",
-            "Niveau nuit/version", "Sommet", "Crepuscule (USUM)", "Ultra-Breche (USUM)",
+            "Niveau aleatoire B", "Niveau Ninjask", studio::localization::bilingual("Shedinja level", "Niveau Munja"), studio::localization::bilingual("Beauty", "Beaute"),
+            "Objet (male)", "Objet (femelle)", studio::localization::bilingual("Held item (day)", "Objet tenu (jour)"), studio::localization::bilingual("Held item (night)", "Objet tenu (nuit)"),
+            studio::localization::bilingual("Known move", "Capacite connue"), studio::localization::bilingual("Pokémon in party", "Pokemon dans equipe"), studio::localization::bilingual("Level (male)", "Niveau (male)"), studio::localization::bilingual("Level (female)", "Niveau (femelle)"),
+            studio::localization::bilingual("Electric location", "Lieu electrique"), studio::localization::bilingual("Forest location", "Lieu foret"), studio::localization::bilingual("Icy location", "Lieu froid"), "3DS retournee", studio::localization::bilingual("Affection and type", "Affection et type"),
+            studio::localization::bilingual("Type in party", "Type dans equipe"), studio::localization::bilingual("Rain", "Pluie"), studio::localization::bilingual("Level (morning)", "Niveau (matin)"), studio::localization::bilingual("Level (night)", "Niveau (nuit)"),
+            "Niveau femelle (forme 1)", studio::localization::bilingual("Unused", "Inutilise"), "Niveau version", "Niveau jour/version",
+            "Niveau nuit/version", studio::localization::bilingual("Summit", "Sommet"), studio::localization::bilingual("Dusk (USUM)", "Crepuscule (USUM)"), "Ultra-Breche (USUM)",
             "Objet dans Ultra-Breche (USUM)"};
-        return m >= 0 && m < int(sizeof(names)/sizeof(names[0])) ? names[m] : "Methode inconnue";
+        return m >= 0 && m < int(sizeof(names)/sizeof(names[0])) ? names[m] : studio::localization::bilingual("Unknown method", "Methode inconnue");
     }
 public:
     void draw(const std::filesystem::path &dump,bool active) {
         if (!active) return;
-        if (!ImGui::Begin("Evolution Data",nullptr,ImGuiWindowFlags_NoCollapse)) { ImGui::End();return; }
+        if (!ImGui::Begin(studio::localization::tr("Evolution Data"),nullptr,ImGuiWindowFlags_NoCollapse)) { ImGui::End();return; }
         const auto root=project_store()?project_store()->source:dump;
+        names_.load(root);
         const auto desired=root/"romfs/a/0/1/4";
         if (!archive_ || desired!=path_) load(desired);
         if (ImGui::Button("Charger / Actualiser###evo-reload")) {
@@ -73,31 +75,31 @@ public:
             else load(desired);
         }
         if (ImGui::BeginPopupModal("Recharger les evolutions ?###evo-confirm-reload",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextWrapped("Les modifications locales non integrees seront perdues.");
-            if (ImGui::Button("Recharger")) {load(desired);ImGui::CloseCurrentPopup();}
-            ImGui::SameLine(); if(ImGui::Button("Annuler")) ImGui::CloseCurrentPopup();
+            ImGui::TextWrapped(studio::localization::bilingual("Local changes not integrated into the project will be lost.", "Les modifications locales non integrees seront perdues."));
+            if (ImGui::Button(studio::localization::bilingual("Reload", "Recharger"))) {load(desired);ImGui::CloseCurrentPopup();}
+            ImGui::SameLine(); if(ImGui::Button(studio::localization::bilingual("Cancel", "Annuler"))) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
         ImGui::SameLine(); if(ImGui::Button("Integrer les modifications au projet###evo-save")) save();
         ImGui::SameLine();ImGui::TextDisabled("a/0/1/4 | 8 emplacements par entree");
         if (!status_.empty()) ImGui::TextWrapped("%s",status_.c_str());
-        if (!archive_){ImGui::TextDisabled("Archive Evolution Data indisponible."); ImGui::End();return;}
+        if (!archive_){ImGui::TextDisabled(studio::localization::bilingual("Evolution Data archive unavailable.", "Archive Evolution Data indisponible.")); ImGui::End();return;}
         ImGui::Text("%zu entrees | %zu entree(s) modifiee(s)",archive_->size(),edits_.size());
         if (archive_->size() && selected_ >= 0 && std::size_t(selected_)<archive_->size()) {
             ImGui::Separator(); ImGui::Text("Evolution Data #%d",selected_);
             auto original=archive_->decoded(std::size_t(selected_));
-            if(original.size()!=64) {ImGui::Text("Taille inattendue : %zu octets (64 attendus)",original.size());}
+            if(original.size()!=64) {ImGui::Text(studio::localization::bilingual("Unexpected size: %zu bytes (expected 64)", "Taille inattendue : %zu octets (64 attendus)"),original.size());}
             else {
                 auto it=edits_.find(selected_);
                 Row row=it!=edits_.end()?decode(it->second):decode(original);
                 bool changed=false;
                 if(ImGui::BeginTable("##evo-slots",6,ImGuiTableFlags_BordersInnerH|ImGuiTableFlags_RowBg|ImGuiTableFlags_SizingStretchProp)) {
                     ImGui::TableSetupColumn("#",ImGuiTableColumnFlags_WidthFixed,24);
-                    ImGui::TableSetupColumn("Methode",ImGuiTableColumnFlags_WidthStretch,2.0f);
-                    ImGui::TableSetupColumn("Argument",ImGuiTableColumnFlags_WidthStretch,1.0f);
-                    ImGui::TableSetupColumn("Espece cible",ImGuiTableColumnFlags_WidthStretch,1.0f);
-                    ImGui::TableSetupColumn("Forme",ImGuiTableColumnFlags_WidthStretch,0.7f);
-                    ImGui::TableSetupColumn("Niveau",ImGuiTableColumnFlags_WidthStretch,0.7f);
+                    ImGui::TableSetupColumn(studio::localization::bilingual("Method", "Methode"),ImGuiTableColumnFlags_WidthStretch,2.0f);
+                    ImGui::TableSetupColumn(studio::localization::bilingual("Argument", "Argument"),ImGuiTableColumnFlags_WidthStretch,1.0f);
+                    ImGui::TableSetupColumn(studio::localization::bilingual("Target species", "Espece cible"),ImGuiTableColumnFlags_WidthStretch,1.0f);
+                    ImGui::TableSetupColumn(studio::localization::bilingual("Form", "Forme"),ImGuiTableColumnFlags_WidthStretch,0.7f);
+                    ImGui::TableSetupColumn(studio::localization::bilingual("Level", "Niveau"),ImGuiTableColumnFlags_WidthStretch,0.7f);
                     ImGui::TableHeadersRow();
                     for(int i=0;i<8;++i) {
                         ImGui::PushID(i);auto &e=row[i];ImGui::TableNextRow();
@@ -122,20 +124,20 @@ public:
                     else {auto now=encode(row); if(now==original) edits_.erase(selected_); else edits_[selected_]=std::move(now);status_.clear();}
                 }
                 ImGui::Separator();
-                if(ImGui::Button("Reinitialiser cette entree")) edits_.erase(selected_);
-                ImGui::SameLine(); ImGui::TextDisabled("La signification de l'argument depend de la methode.");
+                if(ImGui::Button(studio::localization::bilingual("Reset this entry", "Reinitialiser cette entree"))) edits_.erase(selected_);
+                ImGui::SameLine(); ImGui::TextDisabled(studio::localization::bilingual("The argument meaning depends on the method.", "La signification de l'argument depend de la methode."));
             }
         }
         ImGui::End();
     }
     void draw_browser() {
         if(ImGui::InputInt("Index###evo-id",&selected_)) clamp();
-        if(!archive_) {ImGui::TextDisabled("Archive non chargee.");return;}
+        if(!archive_) {ImGui::TextDisabled(studio::localization::bilingual("Archive not loaded.", "Archive non chargee."));return;}
         ImGui::TextDisabled("%zu entrees",archive_->size());ImGui::Separator();
         ImGui::BeginChild("##evo-index-list",ImVec2(0,0),false);
         ImGuiListClipper clipper;clipper.Begin(int(archive_->size()));
         while(clipper.Step())for(int i=clipper.DisplayStart;i<clipper.DisplayEnd;++i) {
-            const std::string label=std::to_string(i)+(edits_.count(i)?" *":"")+"##evo-"+std::to_string(i);
+            const std::string label=std::to_string(i)+" - "+names_.personal_label(i)+(edits_.count(i)?" *":"")+"###evo-"+std::to_string(i);
             if(ImGui::Selectable(label.c_str(),selected_==i))selected_=i;
         }
         ImGui::EndChild();
@@ -145,16 +147,16 @@ private:
     void load(const std::filesystem::path &path) {
         path_=path;archive_.reset();edits_.clear();status_.clear();
         try {archive_=std::make_unique<Archive>(path);clamp();}
-        catch(const std::exception &e){status_=std::string("Erreur lecture : ")+e.what();}
+        catch(const std::exception &e){status_=std::string(studio::localization::bilingual("Read error: ", "Erreur lecture : "))+e.what();}
     }
     void save() {
-        if(!archive_||edits_.empty()){status_="Aucune modification a integrer.";return;}
-        auto *proj=project_store();if(!proj){status_="Ouvre un projet USUM Studio pour exporter.";return;}
+        if(!archive_||edits_.empty()){status_=studio::localization::bilingual("No changes to integrate.", "Aucune modification a integrer.");return;}
+        auto *proj=project_store();if(!proj){status_=studio::localization::bilingual("Open a USUM Studio project to export.", "Ouvre un projet USUM Studio pour exporter.");return;}
         try {
             std::map<std::size_t,Bytes> replacements;
             for(const auto &[id,bytes]:edits_) {
-                if(bytes.size()!=64||id<0||std::size_t(id)>=archive_->size())throw std::runtime_error("Entree invalide.");
-                if(archive_->raw(std::size_t(id))!=archive_->decoded(std::size_t(id)))throw std::runtime_error("Entree compressee : export refuse.");
+                if(bytes.size()!=64||id<0||std::size_t(id)>=archive_->size())throw std::runtime_error(studio::localization::bilingual("Invalid entry.", "Entree invalide."));
+                if(archive_->raw(std::size_t(id))!=archive_->decoded(std::size_t(id)))throw std::runtime_error(studio::localization::bilingual("Compressed entry: export refused.", "Entree compressee : export refuse."));
                 replacements[std::size_t(id)]=bytes;
             }
             auto output=proj->root/"scratch"/"evolution-data-editor.garc";
@@ -162,12 +164,13 @@ private:
             archive_->export_to(output,replacements,true);
             // Read back every replacement before importing into the project.
             Archive check(output);
-            for(const auto &[id,bytes]:replacements)if(check.decoded(id)!=bytes)throw std::runtime_error("Verification de l'export echouee.");
+            for(const auto &[id,bytes]:replacements)if(check.decoded(id)!=bytes)throw std::runtime_error(studio::localization::bilingual("Export verification failed.", "Verification de l'export echouee."));
             proj->import_file(std::filesystem::path("romfs/a/0/1/4"),output,false);
             load(proj->source/"romfs/a/0/1/4");
-            status_="Evolutions integrees au projet. Utilise ensuite l'export classique USUM Studio.";
-        }catch(const std::exception &e){status_=std::string("Echec export : ")+e.what();}
+            status_=studio::localization::bilingual("Evolutions integrated into project. Then use standard USUM Studio export.", "Evolutions integrees au projet. Utilise ensuite l'export classique USUM Studio.");
+        }catch(const std::exception &e){status_=std::string(studio::localization::bilingual("Export failed: ", "Echec export : "))+e.what();}
     }
+    DataNames names_;
     std::filesystem::path path_;
     std::unique_ptr<Archive> archive_;
     int selected_=1;

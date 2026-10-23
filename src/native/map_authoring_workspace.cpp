@@ -1,3 +1,5 @@
+#include "native/activity_log.h"
+#include "native/localization.h"
 #include "assets/asset_package.h"
 #include "native/tutorial_widgets.h"
 #include "native/map_authoring_workspace.h"
@@ -104,6 +106,7 @@ void MapAuthoringWorkspace::open_template(const std::filesystem::path &requested
     cancel_ = false;
     error_.clear();
     status_ = "Reading template and resource catalog...";
+    activity_log::add("Authoring", "Opening composition for area " + std::to_string(area));
     collision_editor_.reset();
     collision_renderer_.reset();
     collision_request_ = false;
@@ -597,7 +600,7 @@ void MapAuthoringWorkspace::new_object_import() {
         ImGui::EndChild();
         if (!error_.empty())
             ImGui::TextWrapped("%s", error_.c_str());
-        if (ImGui::Button("Import geometry")) {
+        if (ImGui::Button(studio::localization::tr("Import geometry"))) {
             try {
                 auto candidate =
                     import_new_project_asset(*new_object_, asset_draft_, new_object_materials_);
@@ -619,7 +622,7 @@ void MapAuthoringWorkspace::new_object_import() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button(studio::localization::tr("Cancel"))) {
             new_object_.reset();
             ImGui::CloseCurrentPopup();
         }
@@ -647,7 +650,7 @@ void MapAuthoringWorkspace::asset_editor(std::uint32_t frame) {
                 asset_faces_selected_.insert({s, f});
     }
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("map_authoring_workspace", "Clear"))
+    if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Clear")))
         asset_faces_selected_.clear();
     const auto &source = *asset_edit_geometry_;
     ImGui::InputTextWithHint("##mesh-section-search", "Find mesh or material",
@@ -703,9 +706,9 @@ void MapAuthoringWorkspace::asset_editor(std::uint32_t frame) {
         ImGui::Text("%zu faces selected", asset_faces_selected_.size());
         ImGui::BeginDisabled(asset_faces_selected_.empty());
         const bool keep =
-                       studio::TutorialWidgets::Button("map_authoring_workspace", "Keep selected"),
+                       studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Keep selected")),
                    remove = (ImGui::SameLine(), studio::TutorialWidgets::Button(
-                                                    "map_authoring_workspace", "Delete selected"));
+                                                    "map_authoring_workspace", studio::localization::tr("Delete selected")));
         ImGui::EndDisabled();
         if (keep || remove)
             trim_asset_faces(keep);
@@ -749,6 +752,18 @@ void MapAuthoringWorkspace::asset_editor(std::uint32_t frame) {
         ImGui::EndDisabled();
         if (undo || redo)
             asset_edit_history(redo);
+        if (ImGui::TreeNode("Edit history / Historique##asset-history")) {
+            ImGui::TextDisabled("Click an earlier state to restore it / Restaurer un etat precedent");
+            for (std::size_t i = 0; i < asset_history_.size(); ++i) {
+                const std::string item = (i == 0 ? "Initial / Initial" : "Edit / Modification") +
+                    std::string(" ") + std::to_string(i) + "##history-" + std::to_string(i);
+                if (ImGui::Selectable(item.c_str(), i == asset_history_cursor_)) {
+                    while (asset_history_cursor_ > i) asset_edit_history(false);
+                    while (asset_history_cursor_ < i) asset_edit_history(true);
+                }
+            }
+            ImGui::TreePop();
+        }
         if (studio::TutorialWidgets::CollapsingHeader("map_authoring_workspace",
                                                       "Blender asset exchange")) {
             ImGui::TextWrapped(
@@ -756,13 +771,13 @@ void MapAuthoringWorkspace::asset_editor(std::uint32_t frame) {
                 "edited file. UVs and source material assignments are retained.");
             ImGui::BeginDisabled(object_dialog_kind_ != 0);
             if (studio::TutorialWidgets::Button("map_authoring_workspace",
-                                                "Export asset for Blender...", {-1, 0}))
+                                                studio::localization::tr("Export asset for Blender..."), {-1, 0}))
                 object_exchange_dialog(true);
             if (studio::TutorialWidgets::Button("map_authoring_workspace",
-                                                "Import new Blender model...", {-1, 0}))
+                                                studio::localization::tr("Import new Blender model..."), {-1, 0}))
                 object_exchange_dialog(false, true);
             ImGui::BeginDisabled(!object_exchange_state_);
-            if (studio::TutorialWidgets::Button("map_authoring_workspace", "Import edited asset...",
+            if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Import edited asset..."),
                                                 {-1, 0}))
                 object_exchange_dialog(false);
             ImGui::EndDisabled();
@@ -780,7 +795,7 @@ void MapAuthoringWorkspace::asset_editor(std::uint32_t frame) {
             asset_draft_.id && studio::TutorialWidgets::Button("map_authoring_workspace",
                                                                "Save as new asset", {-1, 0});
         const bool cancel =
-            studio::TutorialWidgets::Button("map_authoring_workspace", "Cancel edit", {-1, 0});
+            studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Cancel edit"), {-1, 0});
         if (save_asset || copy)
             save_asset_edit(copy);
         else if (cancel) {
@@ -963,8 +978,10 @@ void MapAuthoringWorkspace::file_dialog(bool save_file) {
                                initial.empty() ? nullptr : initial.c_str(), false);
 }
 void MapAuthoringWorkspace::save() {
-    if (save_editor_project())
+    if (save_editor_project()) {
+        activity_log::add("Authoring", "Saved composition to project");
         return;
+    }
     require(document_ && !preview_, "Apply or cancel the placement preview before saving");
     if (path_.empty()) {
         file_dialog(true);
@@ -972,6 +989,7 @@ void MapAuthoringWorkspace::save() {
     }
     document_->save(path_);
     status_ = "Composition saved: " + path_.string();
+    activity_log::add("Authoring", status_);
     if (save_then_leave_) {
         save_then_leave_ = false;
         auto action = std::move(leave_action_);
@@ -1034,14 +1052,14 @@ void MapAuthoringWorkspace::dialogs() {
             }
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("map_authoring_workspace", "Discard")) {
+        if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Discard"))) {
             ImGui::CloseCurrentPopup();
             auto action = std::move(leave_action_);
             if (action)
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("map_authoring_workspace", "Cancel")) {
+        if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Cancel"))) {
             ImGui::CloseCurrentPopup();
             leave_action_ = {};
         }
@@ -1151,7 +1169,7 @@ void MapAuthoringWorkspace::draw(std::uint32_t frame, const std::filesystem::pat
     ImGui::Begin("Composition");
     try {
         ImGui::BeginDisabled(busy() || ground_handle_);
-        if (studio::TutorialWidgets::Button("map_authoring_workspace", "Load selected map"))
+        if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Load selected map")))
             request_leave([this, dump, selected_area] {
                 open_template(dump, selected_area);
             });
@@ -1183,7 +1201,7 @@ void MapAuthoringWorkspace::draw(std::uint32_t frame, const std::filesystem::pat
                                                        : "Loading / file operation...");
             if (load_job_.valid() || resource_job_.valid()) {
                 ImGui::SameLine();
-                if (studio::TutorialWidgets::Button("map_authoring_workspace", "Cancel loading"))
+                if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Cancel loading")))
                     cancel_ = true;
             }
         }
@@ -1227,10 +1245,10 @@ void MapAuthoringWorkspace::draw(std::uint32_t frame, const std::filesystem::pat
             ImGui::EndDisabled();
             if (!document_->ground() &&
                 studio::TutorialWidgets::CollapsingHeader("map_authoring_workspace", "Tile grid")) {
-                ImGui::TextUnformatted("Tile size");
+                ImGui::TextUnformatted(studio::localization::tr("Tile size"));
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputFloat("##tile-size", &grid_edit_.tile_size, 10, 100);
-                ImGui::TextUnformatted("Grid origin X / Z");
+                ImGui::TextUnformatted(studio::localization::tr("Grid origin X / Z"));
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputFloat2("##grid-origin", grid_edit_.origin.data());
                 ImGui::SetNextItemWidth(100);
@@ -1424,7 +1442,7 @@ void MapAuthoringWorkspace::browser() {
     ImGui::SeparatorText("Composition assets");
     ImGui::TextDisabled("Drag an object onto the map to place it");
     ImGui::BeginDisabled(((busy() || preview_) && !object_drag_resource_) || ground_handle_);
-    if (studio::TutorialWidgets::Button("map_authoring_workspace", "Import asset...", {-1, 0}))
+    if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Import asset..."), {-1, 0}))
         object_exchange_dialog(false, false, true);
     if (document_->project_assets().empty())
         ImGui::TextWrapped("Choose a dump object or baked terrain below, then Extract asset.");
@@ -1600,7 +1618,7 @@ void MapAuthoringWorkspace::details() {
                 : "Extract asset",
             {-1, 0});
         const bool import_new = studio::TutorialWidgets::Button(
-            "map_authoring_workspace", "Import new Blender model...", {-1, 0});
+            "map_authoring_workspace", studio::localization::tr("Import new Blender model..."), {-1, 0});
         ImGui::EndDisabled();
         ImGui::TextDisabled("New models use this resource’s game materials.");
         if (resource_ >= 0 && document_->project_asset(std::size_t(resource_))) {
@@ -1659,7 +1677,7 @@ void MapAuthoringWorkspace::details() {
                 }
             }
             ImGui::EndDisabled();
-            if (studio::TutorialWidgets::Button("map_authoring_workspace", "Export asset...",
+            if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Export asset..."),
                                                 {-1, 0})) {
                 capture_asset_studio();
                 package_export_ = *document_->project_asset(std::size_t(resource_));
@@ -1693,10 +1711,10 @@ void MapAuthoringWorkspace::details() {
         else
             ImGui::TextWrapped("Return to Map, then click the ground to select a tile.");
         ImGui::BeginDisabled(busy() || ground_handle_);
-        ImGui::TextUnformatted("Ground search ceiling");
+        ImGui::TextUnformatted(studio::localization::tr("Ground search ceiling"));
         ImGui::SetNextItemWidth(-1);
         ImGui::InputFloat("##ground-ceiling", &ground_ceiling_, 100, 1000);
-        ImGui::TextUnformatted("Height offset");
+        ImGui::TextUnformatted(studio::localization::tr("Height offset"));
         ImGui::SetNextItemWidth(-1);
         ImGui::InputFloat("##height-offset", &height_offset_, 1, 10);
         ImGui::TextWrapped("Ground is chosen below the search ceiling. Height offset lifts or "
@@ -1744,7 +1762,7 @@ void MapAuthoringWorkspace::details() {
                     }
                 }
                 ImGui::SameLine();
-                if (studio::TutorialWidgets::Button("map_authoring_workspace", "Cancel preview")) {
+                if (studio::TutorialWidgets::Button("map_authoring_workspace", studio::localization::tr("Cancel preview"))) {
                     cancel_preview();
                     if (selected_)
                         select_instance(selected_);
@@ -1763,7 +1781,7 @@ void MapAuthoringWorkspace::details() {
                     }
                 }
                 if (studio::TutorialWidgets::Button("map_authoring_workspace",
-                                                    "Delete placement")) {
+                                                    studio::localization::tr("Delete placement"))) {
                     document_->erase(selected_);
                     selected_ = 0;
                     refresh_scene();
@@ -1824,6 +1842,8 @@ void MapAuthoringWorkspace::details() {
         }
         ImGui::EndDisabled();
         ImGui::SeparatorText("Added placements");
+        // Only placements authored in this composition are affected, never NPCs in the source ROM.
+        static std::uint64_t pending_delete_placement = 0;
         ImGui::BeginDisabled(busy() || preview_ || ground_handle_);
         ImGui::BeginChild("Composition placements", {0, 130}, ImGuiChildFlags_Borders);
         for (const auto &instance : document_->instances()) {
@@ -1833,10 +1853,62 @@ void MapAuthoringWorkspace::details() {
                 std::to_string(instance.id) + " - " + document_->resource_name(instance.resource);
             if (ImGui::Selectable(label.c_str(), selected_ == instance.id))
                 select_instance(instance.id);
+            if (ImGui::BeginPopupContextItem("placement-context")) {
+                if (ImGui::MenuItem("Select / Selectionner"))
+                    select_instance(instance.id);
+                if (ImGui::MenuItem("Copy ID / Copier l'ID"))
+                    ImGui::SetClipboardText(identity.c_str());
+                if (ImGui::MenuItem("Copy resource name / Copier le nom")) {
+                    const auto name = document_->resource_name(instance.resource);
+                    ImGui::SetClipboardText(name.c_str());
+                }
+                if (ImGui::MenuItem("Duplicate / Dupliquer")) {
+                    try {
+                        auto next = instance.transform;
+                        next.position[0] += document_->grid().tile_size;
+                        selected_ = document_->duplicate(instance.id, next);
+                        draft_ = next;
+                        refresh_scene();
+                    } catch (const std::exception &error) {
+                        error_ = error.what();
+                    }
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Delete added placement... / Supprimer le placement ajoute..."))
+                    pending_delete_placement = instance.id;
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
         }
         ImGui::EndChild();
         ImGui::EndDisabled();
+        if (pending_delete_placement != 0)
+            ImGui::OpenPopup("Confirm placement deletion##authoring");
+        if (ImGui::BeginPopupModal("Confirm placement deletion##authoring", nullptr,
+                                  ImGuiWindowFlags_AlwaysAutoResize)) {
+            const bool french = studio::localization::current == studio::localization::Language::French;
+            ImGui::TextWrapped("%s", french ?
+                "Supprimer ce placement ajoute au projet ? Cette action n'affecte pas les PNJ d'origine." :
+                "Delete this added project placement? Original game NPCs are not affected.");
+            ImGui::TextDisabled("ID: %llu", static_cast<unsigned long long>(pending_delete_placement));
+            if (ImGui::Button(french ? "Supprimer le placement" : "Delete placement")) {
+                try {
+                    document_->erase(pending_delete_placement);
+                    studio::activity_log::add("Authoring", "Deleted added placement #" +
+                        std::to_string(pending_delete_placement));
+                    if (selected_ == pending_delete_placement) selected_ = 0;
+                    refresh_scene();
+                } catch (const std::exception &error) { error_ = error.what(); }
+                pending_delete_placement = 0;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(french ? "Annuler" : "Cancel")) {
+                pending_delete_placement = 0;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
     } catch (const std::exception &error) {
         error_ = error.what();
     }
@@ -1898,6 +1970,7 @@ void MapAuthoringWorkspace::save_asset_studio() {
     require(project_store() && studio_document_, "Open a project asset in Studio first");
     save_editor_project();
     status_ = "Studio edits saved to the project asset. All placed copies are updated.";
+    activity_log::add("Authoring/Studio", status_);
 }
 void MapAuthoringWorkspace::bind_project() {
     if (!document_)

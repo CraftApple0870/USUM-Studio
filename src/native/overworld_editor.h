@@ -55,7 +55,7 @@ class OverworldEditor {
     std::filesystem::path dump_;
     unsigned area_ = 0;
     bool open_ = false, editing_ = false, flag_reserved_ = false;
-    std::uint64_t selected_ = 0, preview_focus_ = 0;
+    std::uint64_t selected_ = 0, preview_focus_ = 0, pending_maps_delete_ = 0, confirm_maps_delete_ = 0;
     int filter_ = 0;
     std::string preview_source_, preview_requested_;
     unsigned scene_generation_ = 0, preview_generation_ = 0;

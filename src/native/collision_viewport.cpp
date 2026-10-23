@@ -1,3 +1,4 @@
+#include "native/configurable_keys.h"
 #include "native/collision_editor.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -95,19 +96,19 @@ bool CollisionEditor::viewport(const float *view, const float *projection, ImVec
             if (!project_store() && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S))
                 save();
             if (!io.KeyCtrl) {
-                if (ImGui::IsKeyPressed(ImGuiKey_1))
+                if (studio::configurable_keys::pressed("collision.select_1", ImGuiKey_1))
                     select_mode(false);
-                if (ImGui::IsKeyPressed(ImGuiKey_2))
+                if (studio::configurable_keys::pressed("collision.select_2", ImGuiKey_2))
                     select_mode(true);
-                if (ImGui::IsKeyPressed(ImGuiKey_G))
+                if (studio::configurable_keys::pressed("collision.move", ImGuiKey_G))
                     tool_ = Tool::Move;
-                if (ImGui::IsKeyPressed(ImGuiKey_R))
+                if (studio::configurable_keys::pressed("collision.rotate", ImGuiKey_R))
                     tool_ = Tool::Rotate;
-                if (ImGui::IsKeyPressed(ImGuiKey_B))
+                if (studio::configurable_keys::pressed("collision.box", ImGuiKey_B))
                     tool_ = Tool::Box;
                 if (ImGui::IsKeyPressed(ImGuiKey_V))
                     tool_ = Tool::Select;
-                if (ImGui::IsKeyPressed(ImGuiKey_F))
+                if (studio::configurable_keys::pressed("collision.frame", ImGuiKey_F))
                     frame_selection();
             }
         } catch (const std::exception &e) {

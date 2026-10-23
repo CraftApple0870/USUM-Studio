@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/overworld_editor.h"
 #include "field/pickup_document.h"
@@ -486,9 +487,80 @@ void OverworldEditor::draw(ViewportCamera &camera, bool loading,
                     camera.bounds_high = scene_->high;
                 }
             }
+            // Context actions belong to Maps' placement browser, not Authoring.
+            // Added placements have the high-bit marker assigned by OverworldDocument.
+            if (ImGui::BeginPopupContextItem("##maps-placement-context")) {
+                const std::uint64_t target = working[i].id;
+                const bool added_here = (target & (std::uint64_t(1) << 32)) != 0;
+                const bool fr = studio::localization::current ==
+                    studio::localization::Language::French;
+                if (ImGui::MenuItem(fr ? "Sélectionner" : "Select")) {
+                    selected_ = target;
+                    editing_ = false;
+                }
+                if (ImGui::MenuItem(fr ? "Copier l'identifiant" : "Copy ID")) {
+                    const auto value = std::to_string(target);
+                    ImGui::SetClipboardText(value.c_str());
+                }
+                ImGui::BeginDisabled(editing_ || loading || !project_store());
+                if (ImGui::MenuItem(fr ? "Modifier..." : "Edit..."))
+                    attempt([&] { selected_ = target; begin(OverworldOperation::Action::Update); });
+                if (ImGui::MenuItem(fr ? "Dupliquer..." : "Duplicate..."))
+                    attempt([&] { selected_ = target; begin(OverworldOperation::Action::Add); });
+                ImGui::EndDisabled();
+                ImGui::Separator();
+                if (added_here) {
+                    ImGui::BeginDisabled(editing_ || loading || !project_store());
+                    if (ImGui::MenuItem(fr ? "Supprimer cet élément ajouté..." :
+                                            "Delete this added placement...")) {
+                        selected_ = target;
+                        pending_maps_delete_ = target;
+                    }
+                    ImGui::EndDisabled();
+                } else {
+                    ImGui::TextDisabled("%s", fr ? "Élément original protégé" :
+                                                 "Original placement protected");
+                }
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
         }
         ImGui::EndChild();
+        // Defer removal until after drawing the list: apply_working() invalidates
+        // the cached working_entries reference used by the loop above.
+        if (pending_maps_delete_) {
+            confirm_maps_delete_ = pending_maps_delete_;
+            ImGui::OpenPopup("##maps-delete-confirmation");
+            pending_maps_delete_ = 0;
+        }
+        if (ImGui::BeginPopupModal("##maps-delete-confirmation", nullptr,
+                                  ImGuiWindowFlags_AlwaysAutoResize)) {
+            const bool fr = studio::localization::current ==
+                studio::localization::Language::French;
+            ImGui::TextWrapped("%s", fr ?
+                "Supprimer cet élément ajouté dans Maps ? L'archive originale reste intacte. "
+                "Vous pourrez utiliser Undo avant de sauvegarder ou d'exporter." :
+                "Delete this placement added in Maps? The original archive stays untouched. "
+                "You can use Undo before saving or exporting.");
+            if (ImGui::Button(fr ? "Annuler" : "Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::SameLine();
+            if (ImGui::Button(fr ? "Supprimer" : "Delete")) {
+                const auto target = confirm_maps_delete_;
+                attempt([&] {
+                    require((target & (std::uint64_t(1) << 32)) != 0,
+                            "Only added placements can be removed with this command");
+                    const auto deletion = document_->working_draft(
+                        target, OverworldOperation::Action::Remove);
+                    document_->apply_working(target, deletion);
+                    selected_ = 0;
+                    preview_focus_ = 0;
+                    editing_ = false;
+                });
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
         ImGui::TextDisabled("Double-click a placement to frame it in the map.");
         ImGui::BeginDisabled(selected_ == 0);
         const auto &style = ImGui::GetStyle();
@@ -503,13 +575,13 @@ void OverworldEditor::draw(ViewportCamera &camera, bool loading,
             });
         if (wide_actions)
             ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("overworld_editor", "Edit selected", action_size))
+        if (studio::TutorialWidgets::Button("overworld_editor", studio::localization::tr("Edit selected"), action_size))
             attempt([&] {
                 begin(OverworldOperation::Action::Update);
             });
         if (wide_actions)
             ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("overworld_editor", "Delete selected", action_size))
+        if (studio::TutorialWidgets::Button("overworld_editor", studio::localization::tr("Delete selected"), action_size))
             attempt([&] {
                 begin(OverworldOperation::Action::Remove);
             });
@@ -577,7 +649,7 @@ void OverworldEditor::draw(ViewportCamera &camera, bool loading,
                             ImGui::InputInt("Local script ID", &draft_.script);
                             ImGui::TextWrapped("Uses a handler already present in this zone.");
                         } else {
-                            ImGui::TextUnformatted("Dialogue");
+                            ImGui::TextUnformatted(studio::localization::tr("Dialogue"));
                             ImGui::InputTextMultiline("##npc-dialogue", dialogue_,
                                                       sizeof(dialogue_), ImVec2(-1, 110));
                             ImGui::TextWrapped("Creates a separate conversation. Keep each line "
@@ -685,7 +757,7 @@ void OverworldEditor::draw(ViewportCamera &camera, bool loading,
                 });
             ImGui::EndDisabled();
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("overworld_editor", "Cancel"))
+            if (studio::TutorialWidgets::Button("overworld_editor", studio::localization::tr("Cancel")))
                 editing_ = false;
         }
         ImGui::SeparatorText(document_->dirty()     ? "Unsaved changes"
@@ -720,7 +792,7 @@ void OverworldEditor::draw(ViewportCamera &camera, bool loading,
         if (wide_actions)
             ImGui::SameLine();
         ImGui::BeginDisabled(editing_);
-        if (studio::TutorialWidgets::Button("overworld_editor", "Save Project", action_size))
+        if (studio::TutorialWidgets::Button("overworld_editor", studio::localization::tr("Save Project"), action_size))
             attempt([&] {
                 save_editor_project();
             });

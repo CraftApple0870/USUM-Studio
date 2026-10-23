@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "native/overworld_editor.h"
 #include "native/undo_shortcuts.h"
 #include "native/tutorial_widgets.h"
@@ -70,9 +72,9 @@ bool OverworldEditor::gizmo(const float *view, const float *projection, ImVec2 o
     }
     if (hovered && drag_axis_ < 0 && !io.WantTextInput && !io.KeyCtrl &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("maps.shape_move", ImGuiKey_G))
             shape_mode_ = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_S))
+        if (studio::configurable_keys::pressed("maps.shape_scale", ImGuiKey_S))
             shape_mode_ = 1;
     }
     unsigned g = unsigned(shape_group_);
@@ -314,7 +316,7 @@ void OverworldEditor::patrol_controls(const SpatialPoint *cursor) {
                 shape_group_ = shape_index_ = -1;
             ImGui::Checkbox("Curved", &path.curved);
             ImGui::SameLine();
-            ImGui::Checkbox("Loop", &path.loop);
+            ImGui::Checkbox(studio::localization::tr("Loop"), &path.loop);
             ImGui::SameLine();
             ImGui::Checkbox("Follow ground", &path.follow_ground);
             patrol_point_ = std::clamp(patrol_point_, 0, int(path.points.size()) - 1);

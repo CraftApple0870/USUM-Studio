@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/conversation_scene_tools.h"
 #include "native/pokemon_record_editor.h"
 #include "native/scene_browser.h"
@@ -646,7 +647,7 @@ bool ConversationSceneTools::trainer(ConversationStep &step) {
     selected = std::find_if(trainers_.begin(), trainers_.end(), [&](const auto &entry) {
         return entry.id == step.trainer;
     });
-    if (records_ && ImGui::Button("Edit trainer team..."))
+    if (records_ && ImGui::Button(studio::localization::tr("Edit trainer team...")))
         records_->open(source_, PokemonRecordKind::Trainer, step.trainer);
     if (selected != trainers_.end()) {
         if (!selected->error.empty())

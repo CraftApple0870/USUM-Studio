@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/undo_shortcuts.h"
 #include "native/tutorial_widgets.h"
 #include "native/map_authoring_workspace.h"
@@ -135,7 +136,7 @@ void MapAuthoringWorkspace::review_tools() {
     }
     ImGui::SeparatorText("Game objects");
     bool objects = document_->stage_objects();
-    if (studio::TutorialWidgets::Checkbox("map_authoring_ground", "Export objects", &objects))
+    if (studio::TutorialWidgets::Checkbox("map_authoring_ground", studio::localization::tr("Export objects"), &objects))
         document_->object_export_settings(objects, document_->object_zone());
     try {
         auto zones = Container::parse(
@@ -169,7 +170,7 @@ void MapAuthoringWorkspace::review_tools() {
                           "Edit fitted collision with each placement.");
     ImGui::SeparatorText("Ground export");
     bool enabled = document_->stage_ground();
-    if (studio::TutorialWidgets::Checkbox("map_authoring_ground", "Export terrain", &enabled))
+    if (studio::TutorialWidgets::Checkbox("map_authoring_ground", studio::localization::tr("Export terrain"), &enabled))
         document_->ground_export_settings(enabled, document_->ground_attribute());
     int mode = document_->replaces_terrain() ? 1 : 0;
     ImGui::SetNextItemWidth(-1);
@@ -179,7 +180,7 @@ void MapAuthoringWorkspace::review_tools() {
         ImGui::TextWrapped(
             "Replaces terrain and collision. Existing objects and entrances are kept.");
     ImGui::BeginDisabled(document_->custom_collision().has_value());
-    ImGui::TextUnformatted("Ground surface");
+    ImGui::TextUnformatted(studio::localization::tr("Ground surface"));
     ImGui::SetNextItemWidth(-1);
     auto attribute = document_->ground_attribute();
     if (ImGui::BeginCombo("##ground-surface", collision_surface_name(attribute).c_str())) {
@@ -230,13 +231,13 @@ void MapAuthoringWorkspace::review_tools() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("map_authoring_ground", "Cancel"))
+        if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Cancel")))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     if (!document_->replaces_terrain())
         ImGui::TextWrapped("Patch edges must meet the existing floor.");
-    if (studio::TutorialWidgets::Button("map_authoring_ground", "Check export", {-1, 0})) {
+    if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Check export"), {-1, 0})) {
         error_.clear();
         status_ = "Checking export...";
         std::string overworld_patch, warp_patch;
@@ -301,7 +302,7 @@ void MapAuthoringWorkspace::review_tools() {
             return result;
         });
     }
-    if (studio::TutorialWidgets::Button("map_authoring_ground", "Save Project", {-1, 0})) {
+    if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Save Project"), {-1, 0})) {
         try {
             if (!save_editor_project())
                 file_dialog(true);
@@ -478,7 +479,7 @@ void MapAuthoringWorkspace::ground_tools() {
             new_ground_grid_.width = dimensions[0];
             new_ground_grid_.height = dimensions[1];
         }
-        ImGui::TextUnformatted("Tile size");
+        ImGui::TextUnformatted(studio::localization::tr("Tile size"));
         ImGui::SetNextItemWidth(-1);
         ImGui::InputFloat("##ground-tile-size", &new_ground_grid_.tile_size);
         ImGui::TextUnformatted("Origin X / Z");
@@ -522,7 +523,7 @@ void MapAuthoringWorkspace::ground_tools() {
             region_end_ = AuthoringTile{grid.width - 1, grid.height - 1};
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("map_authoring_ground", "Clear selection")) {
+        if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Clear selection"))) {
             tile_.reset();
             region_end_.reset();
             ground_vertex_.reset();
@@ -633,7 +634,7 @@ void MapAuthoringWorkspace::ground_tools() {
                 ImGui::SliderFloat("Smooth amount", &terrain_smooth_, 0, 1);
                 ImGui::BeginDisabled(!tile_);
                 const bool flatten = studio::TutorialWidgets::Button("map_authoring_ground",
-                                                                     "Flatten mesh"),
+                                                                     studio::localization::tr("Flatten mesh")),
                            smooth = (ImGui::SameLine(), studio::TutorialWidgets::Button(
                                                             "map_authoring_ground", "Smooth mesh"));
                 ImGui::EndDisabled();
@@ -713,7 +714,7 @@ void MapAuthoringWorkspace::ground_tools() {
                     ground_texture_ < 0
                         ? "Unpainted"
                         : ground_textures_.at(std::size_t(ground_texture_)).name.c_str());
-                if (studio::TutorialWidgets::Button("map_authoring_ground", "Choose surface..."))
+                if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Choose surface...")))
                     ImGui::SetWindowFocus("Asset Library");
             }
             ImGui::TextUnformatted("Radius (cells)");
@@ -815,7 +816,7 @@ void MapAuthoringWorkspace::ground_tools() {
                 ground_texture_ < 0
                     ? "Unpainted"
                     : ground_textures_.at(std::size_t(ground_texture_)).name.c_str());
-            if (studio::TutorialWidgets::Button("map_authoring_ground", "Choose texture..."))
+            if (studio::TutorialWidgets::Button("map_authoring_ground", studio::localization::tr("Choose texture...")))
                 ImGui::SetWindowFocus("Asset Library");
             ImGui::BeginDisabled(!tile_);
             if (studio::TutorialWidgets::Button("map_authoring_ground", "Paint selected cells",
@@ -870,7 +871,7 @@ void MapAuthoringWorkspace::ground_tools() {
             ImGui::BeginDisabled(!tile_);
             if (ground_transform_tool_ == 0) {
                 ImGui::SeparatorText("Height");
-                ImGui::TextUnformatted("Height step");
+                ImGui::TextUnformatted(studio::localization::tr("Height step"));
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputFloat("##ground-height-step", &ground_step_, 5, 25);
                 ImGui::TextUnformatted("Neighbor influence (cells)");

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "inspector_selector.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
@@ -246,14 +247,14 @@ void CameraEditor::update() {
             }
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("camera_editor", "Discard")) {
+        if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Discard"))) {
             ImGui::CloseCurrentPopup();
             auto action = std::move(leave_action_);
             if (action)
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("camera_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Cancel"))) {
             leave_action_ = {};
             ImGui::CloseCurrentPopup();
         }
@@ -285,7 +286,7 @@ void CameraEditor::draw(bool loading, ViewportCamera &view) {
         }
     }
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("camera_editor", "Restart")) {
+    if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Restart"))) {
         if (auto spawn = scene_->start_position())
             player_started_ = player.start(scene_->spatial, *spawn, -1);
     }
@@ -295,7 +296,7 @@ void CameraEditor::draw(bool loading, ViewportCamera &view) {
     if (studio::TutorialWidgets::Button("camera_editor", player.paused ? "Play" : "Pause"))
         player.paused = !player.paused;
     ImGui::SameLine();
-    studio::TutorialWidgets::Checkbox("camera_editor", "Follow active camera", &follow_);
+    studio::TutorialWidgets::Checkbox("camera_editor", studio::localization::tr("Follow active camera"), &follow_);
     if (player.active)
         ImGui::Text("Region %d | Camera %d | Blend %.2f", player.camera_region,
                     player.camera_setting, player.camera_ratio);
@@ -320,7 +321,7 @@ void CameraEditor::draw(bool loading, ViewportCamera &view) {
         if (studio::TutorialWidgets::Button("camera_editor",
                                             project_store() ? "Save Project" : "Save patch"))
             save();
-        if (ImGui::CollapsingHeader("Document actions")) {
+        if (ImGui::CollapsingHeader(studio::localization::tr("Document actions"))) {
             if (!project_store() && studio::TutorialWidgets::Button("camera_editor", "Save as..."))
                 dialog(1);
             if (studio::TutorialWidgets::Button("camera_editor", "Open patch..."))
@@ -433,7 +434,7 @@ void CameraEditor::draw(bool loading, ViewportCamera &view) {
             static int endpoint = 0;
             ImGui::SetNextItemWidth(-1);
             ImGui::Combo("##Capture endpoint", &endpoint, "A\0B\0");
-            if (studio::TutorialWidgets::Button("camera_editor", "Capture current view")) {
+            if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Capture current view"))) {
                 try {
                     auto eye = view.eye();
                     auto target = view.target;
@@ -537,11 +538,11 @@ bool CameraEditor::draw_workspace(bool loading) {
     if (studio::TutorialWidgets::Button("camera_editor", "Choose map in Maps"))
         maps = true;
     studio::TutorialWidgets::Checkbox("camera_editor", "Overhead editing view", &overview_);
-    if (studio::TutorialWidgets::Button("camera_editor", "Frame map"))
+    if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Frame map")))
         view_.fit(scene_ ? scene_->low : view_.bounds_low,
                   scene_ ? scene_->high : view_.bounds_high);
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("camera_editor", "Frame player"))
+    if (studio::TutorialWidgets::Button("camera_editor", studio::localization::tr("Frame player")))
         view_.focus_start(renderer_.player.position);
     auto region_bounds = document_ && scene_
                              ? selected_region_bounds(*document_, scene_->spatial, group_)
@@ -567,7 +568,7 @@ bool CameraEditor::draw_workspace(bool loading) {
                                           "Switches out of player preview."
                                         : "Select a circle, trigger, clamp, keep-out region, or a "
                                           "camera with activation regions.");
-    if (ImGui::CollapsingHeader("Controls")) {
+    if (ImGui::CollapsingHeader(studio::localization::tr("Controls"))) {
         ImGui::TextWrapped("Player: WASD, Ctrl to run.");
         ImGui::TextWrapped("F: frame selected region.");
         ImGui::TextWrapped("%s", viewport_navigation_help);
@@ -616,7 +617,7 @@ bool CameraEditor::draw_workspace(bool loading) {
     draw(loading, view_);
     ImGui::Begin("Camera viewport");
     if (!scene_) {
-        ImGui::TextUnformatted("Load a map to preview cameras.");
+        ImGui::TextUnformatted(studio::localization::tr("Load a map to preview cameras."));
         ImGui::End();
         return maps;
     }

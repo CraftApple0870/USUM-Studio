@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/conversation_editor.h"
 #include "field/interaction_templates.h"
@@ -397,13 +398,13 @@ void ConversationEditor::global_controls(Preferences &preferences) {
         if (ImGui::Begin("Conversation compilation", &compile_status_open_,
                          ImGuiWindowFlags_AlwaysAutoResize)) {
             if (compilation_.valid()) {
-                ImGui::TextUnformatted("Compiling project conversations...");
+                ImGui::TextUnformatted(studio::localization::tr("Compiling project conversations..."));
                 ImGui::ProgressBar(-float(ImGui::GetTime()), {420, 0});
             } else {
                 ImGui::TextWrapped("%s", error_.empty() ? output_.c_str() : error_.c_str());
                 if (!error_.empty() && workspace_ && ImGui::Button("Open conversation editor"))
                     open_ = true;
-                if (ImGui::Button("Close"))
+                if (ImGui::Button(studio::localization::tr("Close")))
                     compile_status_open_ = false;
             }
         }
@@ -432,7 +433,7 @@ void ConversationEditor::controls(std::shared_ptr<Environment> scene, int area, 
         ImGui::BeginDisabled(!store || compilation_.valid() ||
                              (!region->overworld->script &&
                               region->overworld->category != TargetProfile::position_event_pack));
-        if (ImGui::Button("Author interaction...", ImVec2(-1, 0))) {
+        if (ImGui::Button(studio::localization::tr("Author interaction..."), ImVec2(-1, 0))) {
             try {
                 const bool trainer =
                     region->overworld->category == TargetProfile::trainer_placement_pack;
@@ -487,7 +488,7 @@ void ConversationEditor::messages() {
     auto &document = workspace_->open(actor_);
     auto draft = document.draft();
     bool changed = false;
-    if (ImGui::CollapsingHeader("Languages and messages")) {
+    if (ImGui::CollapsingHeader(studio::localization::tr("Languages and messages"))) {
         ImGui::TextWrapped("Select languages to export. Blank translations use English. "
                            "Unchecked languages are not exported; their text is retained here.");
         if (ImGui::BeginTable("Languages", 2)) {
@@ -621,7 +622,7 @@ void ConversationEditor::visual() {
             if (s.action == ConversationAction::Menu) {
                 ImGui::TextWrapped("Select an option on the left to edit its label and steps. Add "
                                    "step with the menu selected adds to Cancel.");
-                if (ImGui::Button("Add option")) {
+                if (ImGui::Button(studio::localization::tr("Add option"))) {
                     ConversationStep option;
                     option.id = next_id(draft.steps);
                     option.action = ConversationAction::MenuOption;
@@ -1039,7 +1040,7 @@ void ConversationEditor::draw(Preferences &preferences) {
             candidate_.reset();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Close"))
+        if (ImGui::Button(studio::localization::tr("Close")))
             open_ = false;
         if (candidate_) {
             ImGui::SeparatorText("Replacement template");
@@ -1074,7 +1075,7 @@ void ConversationEditor::draw(Preferences &preferences) {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
+            if (ImGui::Button(studio::localization::tr("Cancel")))
                 ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -1105,7 +1106,7 @@ void ConversationEditor::draw(Preferences &preferences) {
     if (UndoShortcuts::button("conversation_editor", "Redo"))
         document.redo();
     ImGui::SameLine();
-    if (ImGui::Button("Save Project")) {
+    if (ImGui::Button(studio::localization::tr("Save Project"))) {
         try {
             save_editor_project();
             error_.clear();
@@ -1187,7 +1188,7 @@ void ConversationEditor::draw(Preferences &preferences) {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
+            if (ImGui::Button(studio::localization::tr("Cancel")))
                 ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -1205,7 +1206,7 @@ void ConversationEditor::draw(Preferences &preferences) {
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     if (busy)
-        ImGui::TextUnformatted("Compiling in the background...");
+        ImGui::TextUnformatted(studio::localization::tr("Compiling in the background..."));
     if (!error_.empty())
         ImGui::TextWrapped("%s", error_.c_str());
     if (!diagnostics_.empty()) {
@@ -1226,7 +1227,7 @@ void ConversationEditor::draw(Preferences &preferences) {
             ImGui::PopID();
         }
     }
-    if (!output_.empty() && ImGui::CollapsingHeader("Compiler output"))
+    if (!output_.empty() && ImGui::CollapsingHeader(studio::localization::tr("Compiler output")))
         ImGui::TextWrapped("%s", output_.c_str());
     ImGui::TextDisabled("Compile all, Save Project, Stage Project, then reload staged assets. Game "
                         "export uses Build Project.");
@@ -1402,7 +1403,7 @@ void ConversationEditor::preview() {
                                         : branch_name(choice.action, true));
             if (choice.action == ConversationAction::Choice) {
                 ImGui::SameLine();
-                no |= ImGui::Button("Cancel");
+                no |= ImGui::Button(studio::localization::tr("Cancel"));
             }
             if (choice.action == ConversationAction::TrainerBattle) {
                 if (yes)
@@ -1429,7 +1430,7 @@ void ConversationEditor::preview() {
                 preview_choice_.reset();
                 preview_text_.clear();
             }
-        } else if (!preview_queue_.empty() && ImGui::Button("Continue"))
+        } else if (!preview_queue_.empty() && ImGui::Button(studio::localization::tr("Continue")))
             preview_text_.clear();
     }
     ImGui::End();

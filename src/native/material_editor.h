@@ -78,6 +78,7 @@ class MaterialEditor {
     void bind_project();
     void poll();
     void texture_import_panel();
+    void import_matching_png_folder(const std::filesystem::path &folder);
     std::optional<TextureImage> texture_import_;
     Bytes texture_import_source_;
     std::future<Bytes> texture_encoding_;
@@ -91,6 +92,11 @@ class MaterialEditor {
     std::uint64_t channel_preview_revision_ = 0;
     void clear_channel_preview();
     bool texture_import_open_ = false, texture_add_ = false;
+    std::string resize_studio_texture_name_;
+    int resize_studio_width_ = 256, resize_studio_height_ = 256, resize_studio_filter_ = 0;
+    bool texture_manual_resize_ = false;
+    int texture_resize_width_ = 256, texture_resize_height_ = 256;
+    int texture_resize_filter_ = 0;
     std::string texture_import_error_;
     void save();
     void dialog(int kind);

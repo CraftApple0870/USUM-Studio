@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/model_workspace.h"
 #include "native/theme.h"
@@ -24,7 +25,7 @@ void ModelWorkspace::clothing_leave_dialog() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("clothing_workspace", "Discard and continue")) {
+        if (studio::TutorialWidgets::Button("clothing_workspace", studio::localization::tr("Discard and continue"))) {
             for (unsigned i = 0; i < 4; ++i) {
                 auto &palette = clothing_palettes_[i];
                 palette.current = palette.saved;
@@ -145,7 +146,7 @@ void ModelWorkspace::browse_clothing(bool busy) {
         search_[0] = 0;
         changed = !clothing_assembled_ && selection.items[clothing_slot_] >= 0;
     }
-    if (studio::TutorialWidgets::Checkbox("clothing_workspace", "Assembled outfit",
+    if (studio::TutorialWidgets::Checkbox("clothing_workspace", studio::localization::tr("Assembled outfit"),
                                           &clothing_assembled_))
         changed = clothing_assembled_ || selection.items[clothing_slot_] >= 0;
     ImGui::BeginDisabled(!clothing_assembled_ && selection.items[clothing_slot_] < 0);
@@ -161,7 +162,7 @@ void ModelWorkspace::browse_clothing(bool busy) {
         selection.lip = 0;
         changed = true;
     }
-    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", "Appearance colors")) {
+    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", studio::localization::tr("Appearance colors"))) {
         auto color_picker = [&](const char *label, unsigned type, unsigned &index) {
             auto &colors = clothing_catalog_.colors[type];
             ImGui::SetNextItemWidth(145);
@@ -190,7 +191,7 @@ void ModelWorkspace::browse_clothing(bool busy) {
             ImGui::TextDisabled("Lip 0 uses the skin color.");
         }
     }
-    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", "Edit color palettes")) {
+    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", studio::localization::tr("Edit color palettes"))) {
         auto &palette = clothing_palettes_[clothing_profile_];
         ImGui::TextWrapped("Edit this body's shared colors. Export before closing the app. "
                            "Clothing items choose their colors from these tables.");
@@ -298,7 +299,7 @@ void ModelWorkspace::browse_clothing(bool busy) {
         }
         ImGui::TextWrapped("%s", palette.source.string().c_str());
     }
-    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", "Clothing source")) {
+    if (studio::TutorialWidgets::CollapsingHeader("clothing_workspace", studio::localization::tr("Clothing source"))) {
         auto path = clothing_archive(dump_, selection, unsigned(clothing_slot_));
         ImGui::TextWrapped("%s", path.empty() ? "This body has no archive for this part."
                                               : path.string().c_str());

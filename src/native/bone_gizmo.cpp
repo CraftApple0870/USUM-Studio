@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
 #include "native/bone_gizmo.h"
@@ -46,12 +47,12 @@ void BoneGizmo::toolbar() {
     studio::TutorialWidgets::RadioButton("bone_gizmo", "Select", &mode_, 3);
     ImGui::EndDisabled();
     ImGui::BeginDisabled(dragging());
-    ImGui::Checkbox("Auto key", &auto_key_);
+    ImGui::Checkbox(studio::localization::tr("Auto key"), &auto_key_);
     ImGui::SameLine();
     ImGui::BeginDisabled(!pending_);
-    insert_ = ImGui::Button("Insert key");
+    insert_ = ImGui::Button(studio::localization::tr("Insert key"));
     ImGui::SameLine();
-    discard_ = ImGui::Button("Discard preview");
+    discard_ = ImGui::Button(studio::localization::tr("Discard preview"));
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::TextDisabled(pending_ ? "Unkeyed preview — Insert key or Discard preview."

@@ -1,3 +1,5 @@
+#include "native/activity_log.h"
+#include "native/localization.h"
 #include "audio/wave_import.h"
 #include "inspector_selector.h"
 #include "native/tutorial_widgets.h"
@@ -45,6 +47,7 @@ void AudioEditor::play() {
 void AudioEditor::select(std::size_t index) {
     stop();
     selected_ = index;
+    activity_log::add("Audio", "Selected sound entry " + std::to_string(index));
     samples_ = {};
     waveform_.clear();
     error_.clear();
@@ -112,7 +115,7 @@ void AudioEditor::choose(Action action) {
         return;
     }
     action_ = action;
-    if (action == Action::Export) {
+    if (action == Action::Export || action == Action::BatchWave) {
         choose_folder(window_, dialog_, nullptr);
         return;
     }
@@ -198,6 +201,7 @@ void AudioEditor::update(bool active) {
             document_->replace(selected_, encoding_.get());
             select(selected_);
             notice_ = "Sound sample replacement applied.";
+            activity_log::add("Audio", notice_ + " Entry " + std::to_string(selected_));
         } catch (const std::exception &e) {
             error_ = e.what();
         }
@@ -255,13 +259,53 @@ void AudioEditor::update(bool active) {
                     document_->replace(selected_, read_file(file));
                     select(selected_);
                     notice_ = "Stream replacement applied.";
+                    activity_log::add("Audio", notice_ + " Entry " + std::to_string(selected_));
                 }
+            } else if (action_ == Action::BatchWave) {
+                require(!exporting_.valid(), "An audio export is already running");
+                require(category_ != 1, "Pokemon cries have their own exporter");
+                std::vector<std::pair<std::size_t, std::pair<bool, Bytes>>> batch;
+                for (auto index : multiple_selection_) {
+                    if (index >= document_->tracks.size() ||
+                        document_->tracks[index].effect != (category_ == 2))
+                        continue;
+                    batch.emplace_back(index, std::make_pair(document_->tracks[index].effect,
+                                                              document_->current(index)));
+                }
+                require(!batch.empty(), "Select audio entries to export");
+                std::filesystem::create_directories(file);
+                require_audio_output(dump_, file / "batch_check.wav");
+                exporting_ = std::async(std::launch::async,
+                    [batch = std::move(batch), folder = std::move(file)]() mutable {
+                    std::size_t succeeded = 0;
+                    std::string failures;
+                    for (auto &[index, item] : batch) {
+                        try {
+                            auto samples = item.first ? decode_sound_wave(item.second)
+                                                      : decode_music(item.second);
+                            auto target = folder / ("audio_" + std::to_string(index) + ".wav");
+                            write_file_atomic(target, export_audio_wav(samples));
+                            ++succeeded;
+                        } catch (const std::exception &e) {
+                            if (!failures.empty()) failures += "; ";
+                            failures += std::to_string(index) + ": " + e.what();
+                        }
+                    }
+                    if (!failures.empty())
+                        throw std::runtime_error("Exported " + std::to_string(succeeded) +
+                            " file(s), but some failed: " + failures);
+                    return "Exported " + std::to_string(succeeded) + " WAV files to " +
+                           folder.string();
+                });
+                notice_ = "Exporting selected audio to WAV...";
+                activity_log::add("Audio", notice_);
             } else if (action_ == Action::Wave) {
                 if (file.extension().empty())
                     file += ".wav";
                 require_audio_output(dump_, file);
                 write_file_atomic(file, export_audio_wav(samples_));
                 notice_ = "WAV exported.";
+                activity_log::add("Audio", notice_);
             } else if (action_ == Action::Save) {
                 if (file.extension().empty())
                     file += ".usum-audio";
@@ -294,6 +338,7 @@ void AudioEditor::update(bool active) {
         exporting_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         try {
             notice_ = exporting_.get();
+            activity_log::add("Audio", notice_);
         } catch (const std::exception &e) {
             error_ = e.what();
         }
@@ -311,7 +356,7 @@ void AudioEditor::update(bool active) {
         if (studio::TutorialWidgets::Button("audio_editor", "Save project"))
             choose(Action::Save);
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("audio_editor", "Discard")) {
+        if (studio::TutorialWidgets::Button("audio_editor", studio::localization::tr("Discard"))) {
             document_->discard();
             auto action = std::move(leave_);
             leave_ = {};
@@ -319,7 +364,7 @@ void AudioEditor::update(bool active) {
             action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("audio_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("audio_editor", studio::localization::tr("Cancel"))) {
             leave_ = {};
             ImGui::CloseCurrentPopup();
         }
@@ -370,6 +415,21 @@ void AudioEditor::draw(const std::filesystem::path &dump) {
     std::transform(query.begin(), query.end(), query.begin(), [](unsigned char c) {
         return char(std::tolower(c));
     });
+    if (!multiple_selection_.empty()) {
+        ImGui::Text("%zu %s", multiple_selection_.size(),
+            studio::localization::bilingual("selected", "selectionnes"));
+        ImGui::SameLine();
+        if (ImGui::SmallButton(studio::localization::bilingual("Clear##audio", "Effacer##audio")))
+            multiple_selection_.clear();
+        if (category_ != 1) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(busy || exporting_.valid());
+            if (ImGui::SmallButton(studio::localization::bilingual(
+                    "Export selected WAV...##batch_audio", "Exporter WAV selectionnes...##batch_audio")))
+                choose(Action::BatchWave);
+            ImGui::EndDisabled();
+        }
+    }
     ImGui::BeginChild("Audio entries");
     auto count = category_ == 1 ? pokemon_.size() : document_ ? document_->tracks.size() : 0;
     for (std::size_t i = 0; i < count; ++i) {
@@ -385,15 +445,33 @@ void AudioEditor::draw(const std::filesystem::path &dump) {
         if (lower.find(query) == std::string::npos)
             continue;
         ImGui::PushID(int(i));
-        if (ImGui::Selectable(label.c_str(), i == (category_ == 1 ? cry_ : selected_))) {
-            if (category_ == 1)
-                cry_ = i;
-            else
-                try {
-                    select(i);
-                } catch (const std::exception &e) {
-                    error_ = e.what();
+        if (ImGui::Selectable(label.c_str(), multiple_selection_.contains(i) || i == (category_ == 1 ? cry_ : selected_))) {
+            const auto &io = ImGui::GetIO();
+            if (io.KeyCtrl) {
+                if (!multiple_selection_.erase(i)) multiple_selection_.insert(i);
+                selection_anchor_ = i;
+            } else if (io.KeyShift && selection_anchor_ != std::size_t(-1)) {
+                auto lo = std::min(i, selection_anchor_), hi = std::max(i, selection_anchor_);
+                for (std::size_t j = lo; j <= hi; ++j) {
+                    if (category_ == 1 || (document_ && j < document_->tracks.size() &&
+                        document_->tracks[j].effect == (category_ == 2)))
+                        multiple_selection_.insert(j);
                 }
+            } else {
+                multiple_selection_.clear(); selection_anchor_ = i;
+                if (category_ == 1) cry_ = i;
+                else try { select(i); } catch (const std::exception &e) { error_ = e.what(); }
+            }
+        }
+        if (ImGui::BeginPopupContextItem("##audio_context")) {
+            if (ImGui::MenuItem(studio::localization::bilingual("Open audio", "Ouvrir le son"))) {
+                multiple_selection_.clear(); selection_anchor_ = i;
+                if (category_ == 1) cry_ = i;
+                else try { select(i); } catch (const std::exception &e) { error_ = e.what(); }
+            }
+            if (ImGui::MenuItem(studio::localization::bilingual("Copy name", "Copier le nom")))
+                ImGui::SetClipboardText(label.c_str());
+            ImGui::EndPopup();
         }
         ImGui::PopID();
     }
@@ -426,7 +504,7 @@ void AudioEditor::draw(const std::filesystem::path &dump) {
         if (studio::TutorialWidgets::Button("audio_editor", "Stop"))
             stop();
         ImGui::SameLine();
-        studio::TutorialWidgets::Checkbox("audio_editor", "Loop", &loop_);
+        studio::TutorialWidgets::Checkbox("audio_editor", studio::localization::tr("Loop"), &loop_);
         ImGui::SetNextItemWidth(180);
         if (ImGui::SliderFloat("Volume", &volume_, 0, 1) && audio_)
             SDL_SetAudioStreamGain(audio_, volume_);
@@ -475,7 +553,7 @@ void AudioEditor::draw(const std::filesystem::path &dump) {
         ImGui::EndDisabled();
         ImGui::SeparatorText("Edit track");
         ImGui::BeginDisabled(busy || samples_.pcm.empty());
-        if (studio::TutorialWidgets::Button("audio_editor", "Export WAV..."))
+        if (studio::TutorialWidgets::Button("audio_editor", studio::localization::tr("Export WAV...")))
             choose(Action::Wave);
         ImGui::SameLine();
         if (studio::TutorialWidgets::Button("audio_editor", document_->tracks[selected_].effect

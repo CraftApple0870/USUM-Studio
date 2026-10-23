@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/undo_shortcuts.h"
 #include "native/existing_map_editor.h"
 #include "native/imgui_renderer.h"
@@ -230,13 +231,13 @@ bool ExistingMapEditor::draw(std::uint32_t, const std::filesystem::path &dump, u
             status_ = "Select a terrain resource, then enable only its ground meshes.";
         }
         ImGui::BeginDisabled(loading_.valid() || dragging_ || !project_store());
-        if (ImGui::Button("Load selected map"))
+        if (ImGui::Button(studio::localization::tr("Load selected map")))
             attempt([&] {
                 open(dump, area);
             });
         ImGui::EndDisabled();
         if (loading_.valid())
-            ImGui::TextUnformatted("Loading map...");
+            ImGui::TextUnformatted(studio::localization::tr("Loading map..."));
         if (base_) {
             ImGui::Text("Field area %u", area_);
             ImGui::SeparatorText("Edit terrain");
@@ -269,7 +270,7 @@ bool ExistingMapEditor::draw(std::uint32_t, const std::filesystem::path &dump, u
             ImGui::TextWrapped("Check the mesh parts you want to brush. Unchecked parts are protected.");
             ImGui::BeginDisabled(dragging_);
             ImGui::SeparatorText("Editable mesh parts");
-            if (ImGui::Button("Enable all"))
+            if (ImGui::Button(studio::localization::tr("Enable all")))
                 for (std::size_t i = 0; i < geometry_->meshes.size(); ++i)
                     editable_.insert(i);
             ImGui::SameLine();
@@ -309,7 +310,7 @@ bool ExistingMapEditor::draw(std::uint32_t, const std::filesystem::path &dump, u
         ImGui::DragFloat("Strength", &strength_, 1, 1, 10000, "%.1f", ImGuiSliderFlags_AlwaysClamp);
         if (tool_ == 3)
             ImGui::DragFloat("Target height", &level_, 1);
-        ImGui::Checkbox("Recalculate normals", &recalculate_);
+        ImGui::Checkbox(studio::localization::tr("Recalculate normals"), &recalculate_);
     } else if (document_) {
         const auto &materials = document_->model.scene->materials;
         material_ = std::clamp(material_, 0, int(materials.size()) - 1);
@@ -332,7 +333,7 @@ bool ExistingMapEditor::draw(std::uint32_t, const std::filesystem::path &dump, u
                            "surface across X/Z; it is intended for ground.");
     }
     ImGui::EndDisabled();
-    if (ImGui::CollapsingHeader("Controls"))
+    if (ImGui::CollapsingHeader(studio::localization::tr("Controls")))
         ImGui::TextWrapped("Left drag: brush | Esc: cancel\nMiddle drag: orbit | Shift+middle: pan "
                            "| RMB+WASD: fly");
     ImGui::TextWrapped("Save and stage to update Maps. Collision is edited separately.");
@@ -393,11 +394,11 @@ void ExistingMapEditor::viewport() {
     }
     ImGui::EndDisabled();
     if (!view_) {
-        ImGui::TextUnformatted("Load the selected map to begin.");
+        ImGui::TextUnformatted(studio::localization::tr("Load the selected map to begin."));
         ImGui::End();
         return;
     }
-    if (ImGui::Button("Frame map"))
+    if (ImGui::Button(studio::localization::tr("Frame map")))
         camera_.fit(base_->low, base_->high);
     ImGui::SameLine();
     if (document_ && ImGui::Button("Frame resource"))

@@ -1,4 +1,8 @@
+#include "native/model_folders.h"
+#include <string_view>
+#include "native/feature_visibility.h"
 #include "native/application.h"
+#include "native/activity_log.h"
 #include "scene/resource_reuse.h"
 #include "native/undo_shortcuts.h"
 #include "native/field_system_inspector.h"
@@ -20,6 +24,7 @@
 #include "native/theme.h"
 #include "native/renderer.h"
 #include "native/model_workspace.h"
+#include "native/model_aliases.h"
 #include "native/material_inspector.h"
 #include "native/scene_browser.h"
 #include "native/placement_editor.h"
@@ -37,8 +42,13 @@
 #include "native/localization.h"
 #include "native/personal_data_viewer.h"
 #include "native/item_data_viewer.h"
+#include "native/move_data_viewer.h"
+#include "native/learnset_data_viewer.h"
 #include "native/text_data_viewer.h"
 #include "native/evolution_data_viewer.h"
+#include "native/encounter_data_viewer.h"
+#include "native/trainer_data_viewer.h"
+#include "native/extra_data_viewer.h"
 #include "native/frame_pacing.h"
 #include "native/camera.h"
 #include "native/folder_picker.h"
@@ -47,12 +57,14 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <backends/imgui_impl_sdl3.h>
+#include "native/configurable_keys.h"
 #include <bx/math.h>
 #include <algorithm>
 #include <chrono>
 #include <charconv>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -62,6 +74,59 @@
 #include <functional>
 #include <thread>
 namespace {
+// Beta 0.2: project-independent, persistent keyboard bindings.
+struct KeyBinding {
+    const char *id;
+    const char *english;
+    const char *french;
+    ImGuiKey default_key;
+    ImGuiKey key;
+};
+static KeyBinding bindings[] = {
+    {"player.forward", "Forward", "Avancer", ImGuiKey_W, ImGuiKey_W},
+    {"player.backward", "Backward", "Reculer", ImGuiKey_S, ImGuiKey_S},
+    {"player.left", "Move left", "Aller à gauche", ImGuiKey_A, ImGuiKey_A},
+    {"player.right", "Move right", "Aller à droite", ImGuiKey_D, ImGuiKey_D},
+    {"player.restart", "Restart playtest", "Recommencer le test", ImGuiKey_R, ImGuiKey_R},
+    {"player.exit", "Exit playtest", "Quitter le test", ImGuiKey_Escape, ImGuiKey_Escape},
+    {"camera.forward", "Camera forward", "Caméra : avancer", ImGuiKey_W, ImGuiKey_W},
+    {"camera.backward", "Camera backward", "Caméra : reculer", ImGuiKey_S, ImGuiKey_S},
+    {"camera.left", "Camera left", "Caméra : gauche", ImGuiKey_A, ImGuiKey_A},
+    {"camera.right", "Camera right", "Caméra : droite", ImGuiKey_D, ImGuiKey_D},
+    {"camera.up", "Camera up", "Caméra : monter", ImGuiKey_E, ImGuiKey_E},
+    {"camera.down", "Camera down", "Caméra : descendre", ImGuiKey_Q, ImGuiKey_Q},
+    {"maps.place_move", "Move placed object", "Déplacer un objet", ImGuiKey_G, ImGuiKey_G},
+    {"maps.place_rotate", "Rotate placed object", "Pivoter un objet", ImGuiKey_R, ImGuiKey_R},
+    {"maps.warp_move", "Move warp", "Déplacer un téléporteur", ImGuiKey_G, ImGuiKey_G},
+    {"maps.warp_rotate", "Rotate warp", "Pivoter un téléporteur", ImGuiKey_R, ImGuiKey_R},
+    {"maps.warp_scale", "Scale warp", "Redimensionner un téléporteur", ImGuiKey_S, ImGuiKey_S},
+    {"maps.encounter_move", "Move encounter", "Déplacer une rencontre", ImGuiKey_G, ImGuiKey_G},
+    {"maps.encounter_rotate", "Rotate encounter", "Pivoter une rencontre", ImGuiKey_R, ImGuiKey_R},
+    {"maps.encounter_scale", "Scale encounter", "Redimensionner une rencontre", ImGuiKey_S, ImGuiKey_S},
+    {"maps.shape_move", "Move map shape", "Déplacer une zone", ImGuiKey_G, ImGuiKey_G},
+    {"maps.shape_scale", "Scale map shape", "Redimensionner une zone", ImGuiKey_S, ImGuiKey_S},
+    {"models.geometry_move", "Move geometry", "Déplacer la géométrie", ImGuiKey_G, ImGuiKey_G},
+    {"models.geometry_rotate", "Rotate geometry", "Pivoter la géométrie", ImGuiKey_R, ImGuiKey_R},
+    {"models.geometry_scale", "Scale geometry", "Redimensionner la géométrie", ImGuiKey_S, ImGuiKey_S},
+    {"models.box_select", "Box selection", "Sélection rectangulaire", ImGuiKey_B, ImGuiKey_B},
+    {"models.select_vertices", "Vertex selection", "Sélection des sommets", ImGuiKey_1, ImGuiKey_1},
+    {"models.select_edges", "Edge selection", "Sélection des arêtes", ImGuiKey_2, ImGuiKey_2},
+    {"models.select_faces", "Face selection", "Sélection des faces", ImGuiKey_3, ImGuiKey_3},
+    {"models.frame", "Frame model", "Cadrer le modèle", ImGuiKey_F, ImGuiKey_F},
+    {"uv.move", "Move UV", "Déplacer les UV", ImGuiKey_G, ImGuiKey_G},
+    {"uv.rotate", "Rotate UV", "Pivoter les UV", ImGuiKey_R, ImGuiKey_R},
+    {"uv.scale", "Scale UV", "Redimensionner les UV", ImGuiKey_S, ImGuiKey_S},
+    {"uv.frame", "Frame UV", "Cadrer les UV", ImGuiKey_F, ImGuiKey_F},
+    {"collision.select_1", "Collision selection mode 1", "Collision : sélection 1", ImGuiKey_1, ImGuiKey_1},
+    {"collision.select_2", "Collision selection mode 2", "Collision : sélection 2", ImGuiKey_2, ImGuiKey_2},
+    {"collision.move", "Move collision", "Déplacer la collision", ImGuiKey_G, ImGuiKey_G},
+    {"collision.rotate", "Rotate collision", "Pivoter la collision", ImGuiKey_R, ImGuiKey_R},
+    {"collision.box", "Box select collision", "Sélection rectangulaire collision", ImGuiKey_B, ImGuiKey_B},
+    {"collision.frame", "Frame collision", "Cadrer la collision", ImGuiKey_F, ImGuiKey_F},
+
+};
+static bool binding_down(int i) { return ImGui::IsKeyDown(bindings[i].key); }
+static bool binding_pressed(int i) { return ImGui::IsKeyPressed(bindings[i].key); }
 struct Camera : studio::ViewportCamera {
     using studio::ViewportCamera::fit;
     bool looking = false;
@@ -105,8 +170,9 @@ struct Camera : studio::ViewportCamera {
             auto key = [](ImGuiKey k) {
                 return ImGui::IsKeyDown(k) ? 1.f : 0.f;
             };
-            fly(key(ImGuiKey_D) - key(ImGuiKey_A), key(ImGuiKey_E) - key(ImGuiKey_Q),
-                key(ImGuiKey_W) - key(ImGuiKey_S), io.DeltaTime,
+            fly(key(bindings[9].key) - key(bindings[8].key),
+                key(bindings[10].key) - key(bindings[11].key),
+                key(bindings[6].key) - key(bindings[7].key), io.DeltaTime,
                 io.KeyShift  ? .25f
                 : io.KeyCtrl ? fast_multiplier
                              : 1.f);
@@ -216,6 +282,10 @@ void layout(int workspace, bool reset) {
         ImGui::DockBuilderDockWindow("Personal Data", center);
         ImGui::DockBuilderDockWindow("Item Data", center);
         ImGui::DockBuilderDockWindow("Text Data", center);
+        ImGui::DockBuilderDockWindow("Evolution Data", center);
+        ImGui::DockBuilderDockWindow("Encounter Data", center);
+        ImGui::DockBuilderDockWindow("Move Data", center);
+        ImGui::DockBuilderDockWindow("Learnset Data", center);
         ImGui::DockBuilderFinish(id);
         return;
     }
@@ -289,7 +359,32 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
     studio::Preferences preferences(preference_root.empty() ? std::filesystem::path{}
                                                             : preference_root / "preferences.cfg");
     SDL_free(pref_path);
+    studio::model_aliases().configure(preference_root);
+    studio::model_folders().configure(preference_root);
     studio::localization::set_language(preferences.get("language"));
+    auto load_visibility = [&](const char *key) { return preferences.get(key) != "0"; };
+    studio::feature_visibility::folders = load_visibility("features.model_folders");
+    studio::feature_visibility::universal_search = load_visibility("features.universal_search");
+    studio::feature_visibility::favorites = load_visibility("features.model_favorites");
+    studio::feature_visibility::renaming = load_visibility("features.model_renaming");
+    studio::feature_visibility::model_ids = preferences.get("interface.model_ids") == "1";
+    bool show_console_notifications = preferences.get("interface.console_notifications") != "0";
+    for (auto &binding : bindings) {
+        auto saved = preferences.get(std::string("keybind.") + binding.id);
+        if (!saved.empty()) {
+            int number = 0;
+            auto parsed = std::from_chars(saved.data(), saved.data() + saved.size(), number);
+            if (parsed.ec == std::errc{} && parsed.ptr == saved.data() + saved.size() &&
+                number >= int(ImGuiKey_NamedKey_BEGIN) && number < int(ImGuiKey_NamedKey_END))
+                binding.key = ImGuiKey(number);
+        }
+    }
+    for (const auto &binding : bindings)
+        studio::configurable_keys::set(binding.id, binding.key);
+    bool show_app_preferences = false;
+    int key_settings_category = 0;
+    int capturing_binding = -1;
+    bool skip_capture_frame = false;
     studio::FramePacing pacing;
     auto saved_flag = [&](const char *key, bool fallback) {
         auto value = preferences.get(key);
@@ -689,6 +784,18 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
     studio::WarpRideWorkspace warp_ride(shader_path, window);
     studio::ModelWorkspace models(shader_path, window), asset_studio(shader_path, window, true);
     bool show_map_diagnostics = false;
+    bool show_activity_console = false;
+    bool show_navigation_history = false;
+    std::vector<int> workspace_history;
+    int previous_breadcrumb_workspace = -1;
+    int previous_breadcrumb_area = -1;
+    int previous_breadcrumb_zone = -1;
+    std::string last_toast_message;
+    std::size_t last_toast_count = 0;
+    double last_toast_time = -100.;
+    bool console_info = true, console_warnings = true, console_errors = true, console_auto_scroll = true;
+    char console_search[160]{};
+    int logged_workspace = -1;
     bool studio_workspace = false;
     std::string studio_notice;
     bool model_workspace = requested_pokemon >= 0;
@@ -1146,10 +1253,12 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     studio::require(renderer.player.active,
                                     "Player mode unavailable: " + renderer.player.notice);
                 }
+                studio::activity_log::add("Maps", "Loaded area " + std::to_string(loading_area) + " / zone " + std::to_string(loading_zone));
                 status = "Uploading scene...";
                 std::cout << scene->report() << std::flush;
             } catch (const std::exception &e) {
                 failure = e.what();
+                studio::activity_log::add("Maps", failure, studio::activity_log::Level::Error);
                 status = "Load failed";
             }
         }
@@ -1335,6 +1444,17 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     : "The Pokemon list refreshes automatically. Names come from the dump; search "
                       "by number for added species.");
         };
+        // USUM_MENU_V2: native title follows the active project's real game target.
+        {
+            static std::string last_title;
+            std::string title = "USUM Studio";
+            const auto game = projects.active_game_name();
+            if (!game.empty()) title += " - Pokemon " + game;
+            if (title != last_title) {
+                SDL_SetWindowTitle(window, title.c_str());
+                last_title = std::move(title);
+            }
+        }
         ImGui_ImplSDL3_NewFrame();
         if (update_font())
             ui.upload_font();
@@ -1381,13 +1501,387 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         }
         static studio::PersonalDataViewer personal_data_viewer;
         static studio::ItemDataViewer item_data_viewer;
+        static studio::MoveDataViewer move_data_viewer;
+        static studio::LearnsetDataViewer learnset_data_viewer;
         static studio::TextDataViewer text_data_viewer;
         static studio::EvolutionDataViewer evolution_data_viewer;
+        static studio::EncounterDataViewer encounter_data_viewer;
+        static studio::TrainerDataViewer trainer_data_viewer(false);
+        static studio::TrainerDataViewer trainer_pokemon_viewer(true);
+        static studio::ExtraDataViewer egg_move_viewer(studio::ExtraDataViewer::Kind::EggMoves);
+        static studio::ExtraDataViewer mega_viewer(studio::ExtraDataViewer::Kind::Mega);
+        static studio::ExtraDataViewer trainer_class_viewer(studio::ExtraDataViewer::Kind::TrainerClasses);
+        static studio::ExtraDataViewer tm_tutor_viewer(studio::ExtraDataViewer::Kind::TMTutor);
+        static studio::ExtraDataViewer shop_viewer(studio::ExtraDataViewer::Kind::Shops);
+        // Universal command search.  Search labels are bilingual, and actions are
+        // resolved to workspaces/readers instead of duplicating their logic.
+        static bool focus_global_search = false;
+        static bool request_global_search = false;
+        static char global_search_text[192] = {};
+        static int selected_data_editor = 0;
+        static int preference_page = 0;
+        static int queued_workspace = -1;
+        // Only show genuine Pokemon models found in the dump's model catalog.
+        static std::future<std::vector<studio::PokemonEntry>> model_search_job;
+        static std::vector<studio::PokemonEntry> model_search_entries;
+        static std::string model_search_source;
+        static std::string model_search_error;
+        static int queued_library_category = -1;
+        static std::size_t queued_library_member = 0;
+        static int queued_model_species = -1;
+        static unsigned queued_model_form = 0;
+        static bool queued_model_female = false;
+        // Map catalog is loaded only on demand. Never invent map destinations.
+        struct LibrarySearchResult { int category; studio::LibraryModel entry; };
+        static std::array<std::future<std::vector<studio::LibraryModel>>, 6> library_search_jobs;
+        static std::array<std::vector<studio::LibraryModel>, 6> library_search_entries;
+        static std::string library_search_source;
+        static std::future<studio::MapCatalog> map_search_job;
+        static std::vector<studio::MapLocation> map_search_entries;
+        static std::string map_search_source;
+        static std::string map_search_error;
+        static int queued_map_area = -1;
+        static int queued_map_zone = -1;
+        static int queued_map_workspace = -1;
+
+        const bool global_search_fr = studio::localization::current ==
+                                      studio::localization::Language::French;
+        if (studio::feature_visibility::universal_search && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_K, false) &&
+            !ImGui::GetIO().WantTextInput) request_global_search = true;
+        if (!studio::feature_visibility::universal_search) request_global_search = false;
+        if (request_global_search) {
+            studio::activity_log::add("Search", "Open universal search");
+            request_global_search = false;
+            global_search_text[0] = '\0';
+            focus_global_search = true;
+            if (model_search_source != source && !model_search_job.valid()) {
+                model_search_entries.clear();
+                model_search_error.clear();
+                model_search_source = source;
+                if (source[0] != '\0') {
+                    auto dump = std::filesystem::u8path(source);
+                    auto archives = source_archives;
+                    model_search_job = std::async(std::launch::async, [dump, archives] {
+                        return studio::load_pokemon_catalog(dump, archives);
+                    });
+                }
+            }
+            if (map_search_source != source && !map_search_job.valid()) {
+                map_search_entries.clear();
+                map_search_error.clear();
+                map_search_source = source;
+                if (source[0] != '\0') {
+                    auto dump_path = std::filesystem::u8path(source);
+                    auto archives = source_archives;
+                    map_search_job = std::async(std::launch::async, [dump_path, archives] {
+                        return studio::load_map_catalog(dump_path, archives);
+                    });
+                }
+            }
+            if (library_search_source != source) {
+                bool active = false;
+                for (auto &job : library_search_jobs) if (job.valid()) active = true;
+                if (!active) {
+                    library_search_source = source;
+                    for (auto &entries : library_search_entries) entries.clear();
+                    if (source[0]) for (int i = 0; i < 6; ++i) {
+                        auto path = std::filesystem::u8path(source) /
+                                    studio::model_category_archive(studio::ModelCategory(i));
+                        library_search_jobs[i] = std::async(std::launch::async, [path, i] {
+                            return studio::load_model_library(path, studio::ModelCategory(i));
+                        });
+                    }
+                }
+            }
+            studio::model_aliases().bind(std::filesystem::u8path(source));
+            ImGui::OpenPopup((global_search_fr ? "Recherche universelle###universal_search" : "Universal search###universal_search"));
+        }
+        ImGui::SetNextWindowSize(ImVec2(620, 420), ImGuiCond_FirstUseEver);
+        if (studio::feature_visibility::universal_search && ImGui::BeginPopupModal((global_search_fr ? "Recherche universelle###universal_search" : "Universal search###universal_search"), nullptr,
+                                  ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::TextUnformatted(global_search_fr ? "Recherche universelle (Ctrl+K)" :
+                                                     "Universal search (Ctrl+K)");
+            ImGui::SameLine();
+            if (ImGui::Button(global_search_fr ? "Fermer##search_close" : "Close##search_close"))
+                ImGui::CloseCurrentPopup();
+            if (model_search_job.valid() &&
+                model_search_job.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try { model_search_entries = model_search_job.get(); }
+                catch (const std::exception &error) {
+                    model_search_error = error.what();
+                    model_search_entries.clear();
+                }
+            }
+            if (map_search_job.valid() &&
+                map_search_job.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try { map_search_entries = map_search_job.get().locations; }
+                catch (const std::exception &error) {
+                    map_search_error = error.what();
+                    map_search_entries.clear();
+                }
+            }
+            for (int i = 0; i < 6; ++i)
+                if (library_search_jobs[i].valid() &&
+                    library_search_jobs[i].wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    try { library_search_entries[i] = library_search_jobs[i].get(); }
+                    catch (const std::exception &) { library_search_entries[i].clear(); }
+                }
+            ImGui::SetNextItemWidth(-1);
+            if (focus_global_search) {
+                ImGui::SetKeyboardFocusHere();
+                focus_global_search = false;
+            }
+            ImGui::InputTextWithHint("##global_search_input",
+                                     global_search_fr ? "Rechercher un Pokemon, une carte, un editeur..." :
+                                                        "Search Pokemon, maps, editors...",
+                                     global_search_text, sizeof(global_search_text));
+            struct SearchTarget {
+                const char *en;
+                const char *fr;
+                const char *keywords;
+                int workspace;
+                int data_editor;
+            };
+            static const SearchTarget targets[] = {
+                {"Maps", "Cartes", "map terrain field zone", 0, -1},
+                {"Models", "Modeles", "model pokemon 3d", 1, -1},
+                {"Studio", "Studio", "texture uv material", 2, -1},
+                {"Authoring", "Composition de cartes", "authoring map object npc", 3, -1},
+                {"Collision", "Collisions", "collider mesh", 4, -1},
+                {"Cameras", "Cameras", "camera", 5, -1},
+                {"Images", "Images", "png image resize", 6, -1},
+                {"Audio", "Audio", "music cry son musique cri", 7, -1},
+                {"Warp Ride", "Ultra-Exploration", "warp ride minigame", 8, -1},
+                {"Data", "Donnees", "data database", 9, 0},
+                {"Personal Data", "Donnees personnelles", "pokemon stat form", 9, 0},
+                {"Item Data", "Donnees des objets", "item bag objet", 9, 1},
+                {"Text Data", "Donnees des textes", "text localization traduction", 9, 2},
+                {"Evolution Data", "Donnees des evolutions", "evolution pokemon", 9, 3},
+                {"Encounter Data", "Donnees des rencontres", "encounter wild pokemon", 9, 4},
+                {"Move Data", "Donnees des capacites", "move attack power pp", 9, 5},
+                {"Learnset Data", "Capacites apprises", "learnset level attack", 9, 6},
+                {"Egg Move Data", "Capacites oeuf", "egg moves reproduction", 9, 9},
+                {"Mega Evolution Data", "Mega-Evolutions", "mega stones", 9, 10},
+                {"Trainer Class Data", "Classes de dresseurs", "class trainer", 9, 11},
+                {"TM / Tutor Data", "CT Maitres capacites", "tm tutor", 9, 12},
+                {"Shop / Mart Data", "Boutiques", "shop mart items", 9, 13},
+                {"Keyboard controls", "Configuration des touches", "settings preferences keys keyboard raccourcis", -2, -1},
+            };
+            auto fold_ascii = [](std::string_view text) {
+                std::string out;
+                out.reserve(text.size());
+                for (unsigned char c : text) {
+                    if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c + ('a' - 'A'));
+                    out.push_back(static_cast<char>(c));
+                }
+                return out;
+            };
+            std::string query = fold_ascii(global_search_text);
+            // Match every word independently; this works with mixed FR/EN keywords.
+            auto matches = [&](const SearchTarget &entry) {
+                std::string searchable = fold_ascii(entry.en) + " " +
+                                         fold_ascii(entry.fr) + " " + entry.keywords;
+                size_t at = 0;
+                while (at < query.size()) {
+                    while (at < query.size() && query[at] == ' ') ++at;
+                    size_t end = query.find(' ', at);
+                    if (end == std::string::npos) end = query.size();
+                    if (end > at && searchable.find(query.substr(at, end - at)) ==
+                                    std::string::npos) return false;
+                    at = end;
+                }
+                return true;
+            };
+            ImGui::Separator();
+            int results = 0;
+            const bool activate_first = ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+            for (const auto &entry : targets) {
+                if (!matches(entry)) continue;
+                ++results;
+                ImGui::PushID(&entry);
+                const char *title = global_search_fr ? entry.fr : entry.en;
+                if (ImGui::Selectable(title) || (activate_first && results == 1)) {
+                    if (entry.workspace == -2) { show_app_preferences = true; preference_page = 2; }
+                    else {
+                        queued_workspace = entry.workspace;
+                        if (entry.data_editor >= 0) selected_data_editor = entry.data_editor;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopID();
+            }
+            // Direct model results come from the actual USUM model management table.
+            // Never invent a form/model when no catalog entry is available.
+            const bool search_favorites = studio::feature_visibility::favorites &&
+                (query == "favoris" || query == "favorites" || query == "favorite" || query == "fav");
+            if (search_favorites && studio::feature_visibility::favorites) {
+                ImGui::SeparatorText(global_search_fr ? "Favoris - tous les modeles" :
+                                                        "Favorites - all models");
+            }
+            if (!query.empty()) {
+                ImGui::Separator();
+                ImGui::TextDisabled("%s", global_search_fr ? "Modeles Pokemon" : "Pokemon models");
+                int model_results = 0;
+                for (const auto &pokemon : model_search_entries) {
+                    const std::string label = fold_ascii(pokemon.label);
+                    const std::string name = fold_ascii(pokemon.name);
+                    const std::string number = std::to_string(pokemon.species);
+                    const std::string alias = studio::feature_visibility::renaming ? studio::model_aliases().get(
+                        studio::ModelAliases::pokemon_key(pokemon.data_index)) : std::string{};
+                    if (search_favorites ?
+                        !studio::model_aliases().is_favorite(studio::ModelAliases::pokemon_key(pokemon.data_index)) :
+                        (name.find(query) == std::string::npos &&
+                         label.find(query) == std::string::npos &&
+                         number.find(query) == std::string::npos &&
+                         fold_ascii(alias).find(query) == std::string::npos)) continue;
+                    ++model_results;
+                    std::string display = "[" + std::to_string(pokemon.data_index) + "] " +
+                        (alias.empty() ? pokemon.label : alias + " (" + pokemon.label + ")") +
+                        (global_search_fr ? "  -> Ouvrir le modele" : "  -> Open model");
+                    ImGui::PushID(static_cast<int>(pokemon.data_index));
+                    if (ImGui::Selectable(display.c_str())) {
+                        queued_model_species = static_cast<int>(pokemon.species);
+                        queued_model_form = pokemon.form;
+                        queued_model_female = pokemon.female;
+                        queued_workspace = 1;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopID();
+                    if (model_results >= 80) break;
+                }
+                results += model_results;
+                if (model_search_job.valid())
+                    ImGui::TextDisabled("%s", global_search_fr ?
+                        "Chargement des modeles Pokemon..." : "Loading Pokemon models...");
+                else if (!model_search_error.empty())
+                    ImGui::TextDisabled("%s: %s", global_search_fr ?
+                        "Catalogue de modeles indisponible" : "Model catalog unavailable",
+                        model_search_error.c_str());
+                else if (model_search_source.empty())
+                    ImGui::TextDisabled("%s", global_search_fr ?
+                        "Ouvrez d'abord un dump USUM." : "Open a USUM dump first.");
+            }
+            if (!query.empty()) {
+                ImGui::Separator();
+                ImGui::TextDisabled("%s", global_search_fr ? "Autres modeles" : "Other models");
+                int shown = 0;
+                for (int cat = 0; cat < 6 && shown < 80; ++cat)
+                    for (const auto &model : library_search_entries[cat]) {
+                        auto alias = studio::feature_visibility::renaming ? studio::model_aliases().get(
+                            studio::ModelAliases::library_key(cat + 1, model.member)) : std::string{};
+                        auto number = std::to_string(model.member);
+                        if (search_favorites ?
+                            !studio::model_aliases().is_favorite(studio::ModelAliases::library_key(cat + 1, model.member)) :
+                            (fold_ascii(alias).find(query) == std::string::npos &&
+                             fold_ascii(model.name).find(query) == std::string::npos &&
+                             number.find(query) == std::string::npos)) continue;
+                        std::string label = "[" + number + "] " +
+                            (alias.empty() ? model.name : alias + " (" + model.name + ")") +
+                            (global_search_fr ? "  -> Modele" : "  -> Model");
+                        ImGui::PushID(cat); ImGui::PushID(int(model.member));
+                        if (ImGui::Selectable(label.c_str())) {
+                            queued_library_category = cat + 1;
+                            queued_library_member = model.member;
+                            queued_workspace = 1;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::PopID(); ImGui::PopID();
+                        ++shown; ++results;
+                        if (shown >= 80) break;
+                    }
+            }
+            if (!query.empty()) {
+                ImGui::Separator();
+                ImGui::TextDisabled("%s", global_search_fr ? "Cartes disponibles" : "Available maps");
+                int found_maps = 0;
+                for (const auto &location : map_search_entries) {
+                    const std::string location_name = fold_ascii(location.name);
+                    const std::string area_number = std::to_string(location.area);
+                    if (location_name.find(query) == std::string::npos &&
+                        area_number.find(query) == std::string::npos) continue;
+                    for (int destination : {0, 3}) {
+                        std::string display = location.name +
+                            (destination == 0 ?
+                                (global_search_fr ? "  -> Cartes" : "  -> Maps") :
+                                (global_search_fr ? "  -> Creation de cartes" : "  -> Authoring"));
+                        ImGui::PushID(location.area);
+                        ImGui::PushID(location.zone);
+                        ImGui::PushID(destination);
+                        if (ImGui::Selectable(display.c_str())) {
+                            queued_map_area = location.area;
+                            queued_map_zone = location.zone;
+                            queued_map_workspace = destination;
+                            queued_workspace = destination;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::PopID();
+                        ImGui::PopID();
+                        ImGui::PopID();
+                        ++results;
+                    }
+                    if (++found_maps >= 30) break;
+                }
+                if (map_search_job.valid())
+                    ImGui::TextDisabled("%s", global_search_fr ?
+                        "Chargement des cartes..." : "Loading maps...");
+                else if (!map_search_error.empty())
+                    ImGui::TextDisabled("%s: %s", global_search_fr ?
+                        "Catalogue des cartes indisponible" : "Map catalog unavailable",
+                        map_search_error.c_str());
+            }
+            if (!results) ImGui::TextDisabled("%s", global_search_fr ?
+                          "Aucun resultat" : "No results");
+            ImGui::EndPopup();
+        }
         bool reset_layout = false;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(style.FramePadding.x, ImGui::GetFontSize() * .5f));
         conversation_editor.global_controls(preferences);
         if (ImGui::BeginMainMenuBar()) {
+            // Native-sized system menu: commands, no bulky workspace tabs.
+            if (ImGui::BeginMenu(global_search_fr ? "Fichier" : "File")) {
+                // Direct access to existing project commands; no reimplementation.
+                projects.file_menu();
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(studio::localization::tr("View"))) {
+                if (studio::feature_visibility::universal_search &&
+                    ImGui::MenuItem(global_search_fr ? "Recherche universelle..." : "Universal search...", "Ctrl+K"))
+                    request_global_search = true;
+                ImGui::Separator();
+                ImGui::TextDisabled("%s", global_search_fr ? "ESPACE DE TRAVAIL" : "WORKSPACE");
+                ImGui::Separator();
+                if (studio::TutorialWidgets::MenuItem("main", global_search_fr ?
+                        "Restaurer la disposition" : "Reset workspace layout"))
+                    reset_layout = true;
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", global_search_fr ? "INSPECTION" : "INSPECTION");
+                ImGui::Separator();
+                studio::TutorialWidgets::MenuItem("main", global_search_fr ?
+                    "Diagnostics des cartes" : "Map diagnostics", nullptr, &show_map_diagnostics);
+                ImGui::Separator();
+                ImGui::MenuItem(global_search_fr ? "Console des activités..." : "Activity console...", nullptr, &show_activity_console);
+                ImGui::EndMenu();
+            }
+            // Settings is a direct button: Preferences is the single settings window.
+            if (ImGui::MenuItem(global_search_fr ? "Paramètres" : "Settings"))
+                show_app_preferences = true;
+            if (ImGui::BeginMenu(studio::localization::tr("Project"))) {
+                projects.menu(area);
+                conversation_editor.menu(preferences);
+                ImGui::EndMenu();
+            }
+            tutorials.menu();
+            ImGui::EndMainMenuBar();
+        }
+        ImGui::PopStyleVar();
+        // Row 2: substantial workspace tabs, with quick controls anchored to the right.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.f, 5.f));
+        const ImGuiWindowFlags navigation_flags = ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus;
+        if (ImGui::BeginViewportSideBar("##usum_workspace_bar", ImGui::GetMainViewport(),
+                                       ImGuiDir_Up, ImGui::GetFrameHeight() + 13.f,
+                                       navigation_flags)) {
             int workspace = data_workspace        ? 9
                             : warp_ride_workspace   ? 8
                             : image_workspace     ? 6
@@ -1398,26 +1892,61 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                             : studio_workspace    ? 2
                                                   : int(model_workspace);
 
-            // ============================================================
-            // Calcul de la largeur réservée aux menus de droite.
-            //
-            // Prend en compte la traduction des intitulés, les espacements
-            // ImGui et une petite marge de sécurité supplémentaire.
-            // ============================================================
-
-            const float menu_spacing = style.ItemSpacing.x;
-
-            const float menu_width =
-                ImGui::CalcTextSize(
-                    studio::localization::tr("View")).x
-                + ImGui::CalcTextSize(
-                    studio::localization::tr("Project")).x
-                + ImGui::CalcTextSize("Help").x
-                + menu_spacing * 8.0f
-                + style.WindowPadding.x * 2.0f;
-
-            int chosen_workspace = workspace_selector(workspace, menu_width);
+            // Reserve space so quick actions never overlap the workspace navigation.
+            const float reserve_quick = 4.f * 43.f + 22.f;
+            int chosen_workspace = workspace_selector(workspace, reserve_quick);
+            if (queued_workspace >= 0) {
+                chosen_workspace = queued_workspace;
+                queued_workspace = -1;
+            }
+            if (queued_library_category > 0) {
+                studio::activity_log::add("Models", "Open library category " + std::to_string(queued_library_category) + " member " + std::to_string(queued_library_member));
+                if (source[0]) models.open_library_member(
+                    std::filesystem::u8path(source), queued_library_category,
+                    queued_library_member, source_archives);
+                queued_library_category = -1;
+            }
+            if (queued_model_species >= 0) {
+                // ModelWorkspace resolves the requested species/form asynchronously.
+                // It also reports missing variants rather than opening the wrong model.
+                if (source[0] != '\0') {
+                    studio::activity_log::add("Models", "Open Pokemon #" + std::to_string(queued_model_species) + " form " + std::to_string(queued_model_form));
+                    models.open_species(std::filesystem::u8path(source),
+                        static_cast<unsigned>(queued_model_species), queued_model_form,
+                        queued_model_female, false, source_archives);
+                }
+                queued_model_species = -1;
+            }
+            if (queued_map_workspace >= 0) {
+                const int target_area = queued_map_area;
+                const int target_zone = queued_map_zone;
+                const int destination = queued_map_workspace;
+                queued_map_workspace = -1;
+                queued_map_area = -1;
+                queued_map_zone = -1;
+                studio::activity_log::add("Maps", "Open area " + std::to_string(target_area) + " zone " + std::to_string(target_zone) + (destination == 0 ? " in Maps" : " in Authoring"));
+                if (target_area >= 0 && !source[0]) {
+                    camera_notice = global_search_fr ?
+                        "Selectionnez d'abord un dump USUM." : "Select a USUM dump first.";
+                } else if (target_area >= 0) {
+                    if (destination == 0) {
+                        // Go through the existing map loader: it handles pending edits.
+                        load(false, [&, target_area, target_zone] {
+                            area = target_area;
+                            selected_zone = target_zone;
+                        });
+                    } else {
+                        // Use the map-authoring API rather than only changing tabs.
+                        authoring.open_template(std::filesystem::u8path(source),
+                                                static_cast<unsigned>(target_area));
+                        area = target_area;
+                        selected_zone = target_zone;
+                    }
+                }
+            }
             if (chosen_workspace != workspace) {
+                const char *names[] = {"Maps", "Models", "Studio", "Authoring", "Collision", "Cameras", "Images", "Audio", "Warp Ride", "Data"};
+                studio::activity_log::add("Navigation", std::string("Open workspace: ") + names[std::clamp(chosen_workspace, 0, 9)]);
                 if (chosen_workspace == 0)
                     authored_collision = false;
                 data_workspace = chosen_workspace == 9;
@@ -1431,55 +1960,294 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 model_workspace = chosen_workspace == 1;
                 camera.stop_look(window);
             }
-            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x * 2,
-                                          ImGui::GetWindowWidth() - menu_width));
-            if (ImGui::BeginMenu(studio::localization::tr("View"))) {
-                // Persist the selected interface language in preferences.cfg.
-                if (ImGui::BeginMenu(studio::localization::tr("Language"))) {
-                    if (ImGui::MenuItem("English", nullptr,
-                                       studio::localization::current == studio::localization::Language::English)) {
-                        studio::localization::set_language("en");
-                        preferences.set("language", "en");
-                        preferences.save();
-                    }
-                    if (ImGui::MenuItem("Français", nullptr,
-                                       studio::localization::current == studio::localization::Language::French)) {
-                        studio::localization::set_language("fr");
-                        preferences.set("language", "fr");
-                        preferences.save();
-                    }
-                    ImGui::EndMenu();
-                }
 
-                if (studio::TutorialWidgets::MenuItem("main", "3DS preview (400 x 240)", nullptr,
-                                                      &studio::ImGuiRenderer::preview_3ds)) {
-                    preferences.set("preview_3ds", studio::ImGuiRenderer::preview_3ds ? "1" : "0");
-                    preferences.save();
-                }
-                ImGui::BeginDisabled(!studio::ImGuiRenderer::preview_3ds);
-                if (studio::TutorialWidgets::MenuItem(
-                        "main", "3DS preview at native size", nullptr,
-                        &studio::ImGuiRenderer::preview_native_size)) {
-                    preferences.set("preview_native_size",
-                                    studio::ImGuiRenderer::preview_native_size ? "1" : "0");
-                    preferences.save();
-                }
-                ImGui::EndDisabled();
-                studio::TutorialWidgets::MenuItem("main", "Map diagnostics", nullptr,
-                                                  &show_map_diagnostics);
-                if (studio::TutorialWidgets::MenuItem("main", "Reset this workspace layout"))
-                    reset_layout = true;
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu(studio::localization::tr("Project"))) {
-                projects.menu(area);
-                conversation_editor.menu(preferences);
-                ImGui::EndMenu();
-            }
-            tutorials.menu();
-            ImGui::EndMainMenuBar();
+            // Buttons use the existing project logic, never duplicate save/stage code.
+            constexpr float quick_width = 4.f * 43.f + 3.f * 8.f;
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+                                          ImGui::GetWindowWidth() - quick_width - 5.f));
+            projects.quick_actions(true);
         }
+        ImGui::End();
         ImGui::PopStyleVar();
+        // Row 3: low-profile contextual strip. Keep workspaces' own tools unchanged.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.f, 2.f));
+        if (ImGui::BeginViewportSideBar("##usum_context_bar", ImGui::GetMainViewport(),
+                                       ImGuiDir_Up, ImGui::GetFrameHeight() + 3.f,
+                                       navigation_flags)) {
+            const char *spaces[] = {"Maps", "Models", "Studio", "Authoring", "Collision",
+                "Cameras", "Images", "Audio", "Warp Ride", "Data"};
+            const int active_space = std::clamp(data_workspace ? 9 : warp_ride_workspace ? 8 : image_workspace ? 6 : audio_workspace ? 7 : camera_workspace ? 5 : collision_workspace ? 4 : authoring_workspace ? 3 : studio_workspace ? 2 : int(model_workspace), 0, 9);
+            if (previous_breadcrumb_workspace != active_space) {
+                if (previous_breadcrumb_workspace >= 0 &&
+                    (workspace_history.empty() || workspace_history.back() != previous_breadcrumb_workspace))
+                    workspace_history.push_back(previous_breadcrumb_workspace);
+                if (workspace_history.size() > 32) workspace_history.erase(workspace_history.begin());
+                previous_breadcrumb_workspace = active_space;
+            }
+            if (ImGui::SmallButton("<##breadcrumb_back")) {
+                if (!workspace_history.empty()) {
+                    queued_workspace = workspace_history.back();
+                    workspace_history.pop_back();
+                    previous_breadcrumb_workspace = -1;
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", global_search_fr ? "Espace precedent" : "Previous workspace");
+            ImGui::SameLine();
+            if (ImGui::SmallButton(spaces[active_space])) ImGui::OpenPopup("##breadcrumb_spaces");
+            if (ImGui::BeginPopup("##breadcrumb_spaces")) {
+                for (int i = 0; i < 10; ++i)
+                    if (ImGui::MenuItem(spaces[i], nullptr, active_space == i)) queued_workspace = i;
+                ImGui::EndPopup();
+            }
+            if (active_space == 0 || active_space == 3) {
+                ImGui::SameLine(); ImGui::TextDisabled(">"); ImGui::SameLine();
+                const std::string area_name = (global_search_fr ? "Zone " : "Area ") + std::to_string(area);
+                if (ImGui::SmallButton(area_name.c_str())) queued_workspace = 0;
+                if (selected_zone >= 0) {
+                    ImGui::SameLine(); ImGui::TextDisabled(">"); ImGui::SameLine();
+                    ImGui::TextUnformatted((std::string(global_search_fr ? "Secteur " : "Zone ") + std::to_string(selected_zone)).c_str());
+                }
+            }
+            ImGui::SameLine();
+            if (studio::feature_visibility::universal_search)
+                ImGui::TextDisabled("  |  %s", global_search_fr ?
+                    "Ctrl+K : rechercher une ressource" : "Ctrl+K: find a resource");
+        }
+        ImGui::End();
+        ImGui::PopStyleVar();
+        // Single categorized preferences window, reusing existing persisted settings.
+        if (show_app_preferences) {
+            const bool fr = studio::localization::current == studio::localization::Language::French;
+            ImGui::SetNextWindowSize(ImVec2(780, 520), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin(fr ? "Préférences###studio_preferences" :
+                                  "Preferences###studio_preferences", &show_app_preferences)) {
+                ImGui::BeginChild("##preferences_categories", ImVec2(205, -1), true);
+                ImGui::TextDisabled("%s", fr ? "CATEGORIES" : "CATEGORIES");
+                ImGui::Separator();
+                const char *fr_pages[] = {"Général", "Langue", "Raccourcis clavier", "Prévisualisation 3DS", "Fonctionnalités"};
+                const char *en_pages[] = {"General", "Language", "Keyboard controls", "3DS preview", "Features"};
+                for (int i = 0; i < 5; ++i)
+                    if (ImGui::Selectable(fr ? fr_pages[i] : en_pages[i], preference_page == i))
+                        preference_page = i;
+                ImGui::EndChild();
+                ImGui::SameLine();
+                ImGui::BeginChild("##preferences_content", ImVec2(0, -1), false);
+                ImGui::SeparatorText(fr ? fr_pages[preference_page] : en_pages[preference_page]);
+                if (preference_page == 0) {
+                    if (ImGui::Checkbox(fr ? "Afficher les identifiants des modeles ([1960])" :
+                                           "Show model identifiers ([1960])",
+                                        &studio::feature_visibility::model_ids)) {
+                        preferences.set("interface.model_ids", studio::feature_visibility::model_ids ? "1" : "0");
+                        preferences.save();
+                    }
+                    ImGui::TextDisabled("%s", fr ? "Change uniquement l’affichage dans Models ; conserve les noms et alias." :
+                                                "Only changes labels in Models; names and aliases are preserved.");
+                    ImGui::Spacing();
+                    if (ImGui::Checkbox(fr ? "Notifications de la console" : "Console notifications",
+                                        &show_console_notifications)) {
+                        preferences.set("interface.console_notifications", show_console_notifications ? "1" : "0");
+                        preferences.save();
+                    }
+                    ImGui::TextDisabled("%s", fr ?
+                        "Masque les notifications temporaires sans arrêter le journal ni les erreurs." :
+                        "Hides pop-up notifications; activity history and errors remain available.");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("%s", fr ?
+                        "Les préférences sont sauvegardées automatiquement. Choisissez une catégorie à gauche." :
+                        "Preferences save automatically. Choose a category on the left.");
+                } else if (preference_page == 1) {
+                    if (ImGui::RadioButton("Français", fr)) {
+                        studio::localization::set_language("fr");
+                        preferences.set("language", "fr"); preferences.save();
+                    }
+                    if (ImGui::RadioButton("English", !fr)) {
+                        studio::localization::set_language("en");
+                        preferences.set("language", "en"); preferences.save();
+                    }
+                } else if (preference_page == 2) {
+                    const bool fr = studio::localization::current == studio::localization::Language::French;
+                    ImGui::PushID("embedded_keyboard");
+                const char *categories_fr[] = {"Personnage", "Caméra 3D", "Maps et placements", "Modèles 3D", "UV / Textures", "Collisions"};
+                const char *categories_en[] = {"Player", "3D Camera", "Maps and placements", "3D Models", "UV / Textures", "Collisions"};
+                const int category_starts[] = {0, 6, 12, 22, 30, 34, int(sizeof(bindings) / sizeof(bindings[0]))};
+                // Sidebar with explicit categories; stable internal identifiers survive language switching.
+                ImGui::BeginChild("##keysettings_navigation", ImVec2(150, -1), true);
+                ImGui::TextUnformatted(fr ? "COMMANDES" : "CONTROLS");
+                ImGui::Separator();
+                for (int category = 0; category < 6; ++category) {
+                    const char *title = fr ? categories_fr[category] : categories_en[category];
+                    if (ImGui::Selectable(title, key_settings_category == category)) {
+                        key_settings_category = category;
+                        capturing_binding = -1;
+                    }
+                }
+                ImGui::EndChild();
+                ImGui::SameLine();
+                ImGui::BeginChild("##keysettings_content", ImVec2(0, -1), false);
+                ImGui::SeparatorText(fr ? categories_fr[key_settings_category] : categories_en[key_settings_category]);
+                ImGui::TextWrapped("%s", fr ? "Cliquez sur Modifier, puis appuyez sur la touche souhaitée. Enregistrement automatique."
+                                             : "Click Change, then press the desired key. Changes are saved automatically.");
+                ImGui::Spacing();
+                for (int i = category_starts[key_settings_category]; i < category_starts[key_settings_category + 1]; ++i) {
+                    ImGui::PushID(i);
+                    const auto &b = bindings[i];
+                    ImGui::TextUnformatted(fr ? b.french : b.english);
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(ImGui::GetKeyName(b.key));
+                    ImGui::SameLine();
+                    if (ImGui::Button(capturing_binding == i ? (fr ? "Touche..." : "Press key...")
+                                                             : (fr ? "Modifier" : "Change"))) {
+                        capturing_binding = i;
+                        skip_capture_frame = true;
+                    }
+                    ImGui::PopID();
+                }
+                if (capturing_binding >= 0) {
+                    ImGui::Separator();
+                    ImGui::TextUnformatted(fr ? "En attente d'une touche..." : "Waiting for a key...");
+                    if (skip_capture_frame) skip_capture_frame = false;
+                    else for (int k = int(ImGuiKey_NamedKey_BEGIN); k < int(ImGuiKey_NamedKey_END); ++k) {
+                        if (!ImGui::IsKeyPressed(ImGuiKey(k))) continue;
+                        bindings[capturing_binding].key = ImGuiKey(k);
+                        studio::configurable_keys::set(bindings[capturing_binding].id, ImGuiKey(k));
+                        preferences.set(std::string("keybind.") + bindings[capturing_binding].id, std::to_string(k));
+                        preferences.save();
+                        capturing_binding = -1;
+                        break;
+                    }
+                }
+                ImGui::Separator();
+                if (ImGui::Button(fr ? "Rétablir toutes les touches par défaut" : "Restore all default bindings")) {
+                    for (auto &b : bindings) {
+                        b.key = b.default_key;
+                        studio::configurable_keys::set(b.id, b.key);
+                        preferences.set(std::string("keybind.") + b.id, std::to_string(int(b.key)));
+                    }
+                    preferences.save();
+                    capturing_binding = -1;
+                }
+                ImGui::EndChild();
+                    ImGui::PopID();
+                } else if (preference_page == 3) {
+                    if (ImGui::Checkbox(fr ? "Aperçu 3DS (400 x 240)" :
+                                             "3DS preview (400 x 240)",
+                                         &studio::ImGuiRenderer::preview_3ds)) {
+                        preferences.set("preview_3ds", studio::ImGuiRenderer::preview_3ds ? "1" : "0");
+                        preferences.save();
+                    }
+                    ImGui::BeginDisabled(!studio::ImGuiRenderer::preview_3ds);
+                    if (ImGui::Checkbox(fr ? "Taille native" : "Native size",
+                                         &studio::ImGuiRenderer::preview_native_size)) {
+                        preferences.set("preview_native_size",
+                            studio::ImGuiRenderer::preview_native_size ? "1" : "0");
+                        preferences.save();
+                    }
+                    ImGui::EndDisabled();
+                } else if (preference_page == 4) {
+                    ImGui::TextWrapped("%s", fr ?
+                        "Masquer une fonctionnalite ne supprime aucune donnee. Vos noms, favoris et dossiers seront retrouves lors de sa reactivation." :
+                        "Hiding a feature never deletes its data. Names, favorites and folders are preserved until you enable it again.");
+                    ImGui::Spacing();
+                    auto option = [&](const char *label, const char *description,
+                                      const char *key, bool &enabled) {
+                        if (ImGui::Checkbox(label, &enabled)) {
+                            preferences.set(key, enabled ? "1" : "0");
+                            preferences.save();
+                        }
+                        ImGui::TextDisabled("%s", description);
+                        ImGui::Spacing();
+                    };
+                    option(fr ? "Dossiers et sous-dossiers" : "Folders and subfolders",
+                           fr ? "Masque les filtres et commandes de classement." :
+                                "Hide folder filters and organizing controls.",
+                           "features.model_folders", studio::feature_visibility::folders);
+                    option(fr ? "Recherche universelle (Ctrl+K)" : "Universal search (Ctrl+K)",
+                           fr ? "Masque l'acces et desactive le raccourci." :
+                                "Hide the command and disable the shortcut.",
+                           "features.universal_search", studio::feature_visibility::universal_search);
+                    option(fr ? "Favoris des modeles" : "Model favorites",
+                           fr ? "Masque les etoiles et le filtre des favoris." :
+                                "Hide favorite buttons and filtering.",
+                           "features.model_favorites", studio::feature_visibility::favorites);
+                    option(fr ? "Renommage des modeles" : "Model renaming",
+                           fr ? "Affiche les noms originaux sans effacer les alias." :
+                                "Show original names without deleting aliases.",
+                           "features.model_renaming", studio::feature_visibility::renaming);
+                }
+                ImGui::EndChild();
+            }
+            ImGui::End();
+        }
+        if (show_activity_console) {
+            const bool fr = studio::localization::current == studio::localization::Language::French;
+            ImGui::SetNextWindowSize(ImVec2(820, 440), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin(fr ? "Console des activités###activity_console" : "Activity console###activity_console", &show_activity_console)) {
+                ImGui::Checkbox(fr ? "Infos" : "Info", &console_info); ImGui::SameLine();
+                ImGui::Checkbox(fr ? "Avertissements" : "Warnings", &console_warnings); ImGui::SameLine();
+                ImGui::Checkbox(fr ? "Erreurs" : "Errors", &console_errors);
+                ImGui::SetNextItemWidth(235);
+                ImGui::InputTextWithHint("##activity_filter", fr ? "Rechercher dans le journal..." : "Search log...", console_search, sizeof(console_search));
+                ImGui::SameLine();
+                if (ImGui::Button(fr ? "Copier" : "Copy")) {
+                    std::string report;
+                    for (const auto &line : studio::activity_log::snapshot())
+                        report += "[" + line.time + "] [" + line.category + "] " + line.message + "\n";
+                    ImGui::SetClipboardText(report.c_str());
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(fr ? "Effacer" : "Clear")) studio::activity_log::clear();
+                ImGui::SameLine();
+                ImGui::Checkbox(fr ? "Défilement auto" : "Auto-scroll", &console_auto_scroll);
+                ImGui::Separator();
+                if (ImGui::BeginChild("##activity_rows", ImVec2(0, 0), true)) {
+                    const std::string query = console_search;
+                    for (const auto &line : studio::activity_log::snapshot()) {
+                        if ((line.level == studio::activity_log::Level::Info && !console_info) ||
+                            (line.level == studio::activity_log::Level::Warning && !console_warnings) ||
+                            (line.level == studio::activity_log::Level::Error && !console_errors)) continue;
+                        const std::string row = "[" + line.time + "] [" + line.category + "] " + line.message;
+                        if (!query.empty() && row.find(query) == std::string::npos) continue;
+                        if (line.level == studio::activity_log::Level::Error)
+                            ImGui::TextColored(ImVec4(1.f,.44f,.44f,1.f), "%s", row.c_str());
+                        else if (line.level == studio::activity_log::Level::Warning)
+                            ImGui::TextColored(ImVec4(1.f,.77f,.33f,1.f), "%s", row.c_str());
+                        else ImGui::TextUnformatted(row.c_str());
+                    }
+                    if (console_auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 24.f)
+                        ImGui::SetScrollHereY(1.f);
+                }
+                ImGui::EndChild();
+            }
+            ImGui::End();
+        }
+        // Global status and compact notifications, sourced from the real activity log.
+        {
+            const auto entries = studio::activity_log::snapshot();
+            if (entries.size() != last_toast_count) {
+                last_toast_count = entries.size();
+                if (!entries.empty()) {
+                    const auto &event = entries.back();
+                    last_toast_message = "[" + event.category + "] " + event.message;
+                    last_toast_time = ImGui::GetTime();
+                }
+            }
+            const auto *vp = ImGui::GetMainViewport();
+            // The former status window overlaid the editor viewport. Keep the
+            // activity log and notifications, but do not create that overlay.
+            if (show_console_notifications && !last_toast_message.empty() && ImGui::GetTime() - last_toast_time < 4.0 && !show_activity_console) {
+                ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 405,
+                    vp->WorkPos.y + vp->WorkSize.y - 85), ImGuiCond_Always);
+                ImGui::SetNextWindowSize(ImVec2(395, 45), ImGuiCond_Always);
+                if (ImGui::Begin("##studio_activity_toast", nullptr, ImGuiWindowFlags_NoDecoration |
+                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing |
+                    ImGuiWindowFlags_NoDocking)) {
+                    ImGui::TextWrapped("%s", last_toast_message.c_str());
+                    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) show_activity_console = true;
+                }
+                ImGui::End();
+            }
+        }
         if (show_map_diagnostics) {
             ImGui::SetNextWindowSize(ImVec2(680, 360), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Map diagnostics", &show_map_diagnostics)) {
@@ -1542,7 +2310,6 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         if (projects.gate()) {
         } else if (data_workspace) {
             // Populate the editor data before drawing the associated browser.
-            static int selected_data_editor = 0;
             if (selected_data_editor == 0)
                 personal_data_viewer.draw(std::filesystem::u8path(source), true);
             else if (selected_data_editor == 1)
@@ -1551,11 +2318,28 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 text_data_viewer.draw(std::filesystem::u8path(source), true);
             else if (selected_data_editor == 3)
                 evolution_data_viewer.draw(std::filesystem::u8path(source), true);
-            if (ImGui::Begin("Data browser")) {
+            else if (selected_data_editor == 4)
+                encounter_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 5)
+                move_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 6)
+                learnset_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 7)
+                trainer_data_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 8)
+                trainer_pokemon_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 9) egg_move_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 10) mega_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 11) trainer_class_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 12) tm_tutor_viewer.draw(std::filesystem::u8path(source), true);
+            else if (selected_data_editor == 13) shop_viewer.draw(std::filesystem::u8path(source), true);
+            if (ImGui::Begin(studio::localization::bilingual("Data browser###Data browser", "Navigateur de données###Data browser"))) {
                 // Selector is shared with future editors (evolutions, moves, etc.).
-                const char* data_editors[] = {"Personal Data", "Item Data", "Text Data", "Evolution Data"};
+                const char* data_editors[] = {"Personal Data", "Item Data", "Text Data", "Evolution Data", "Encounter Data", "Move Data", "Learnset Data", "Trainer Data", "Trainer Pokemon", "Egg Move Data", "Mega Evolution Data", "Trainer Class Data", "TM / Tutor Data", "Shop / Mart Data"};
                 ImGui::SetNextItemWidth(-1.f);
-                ImGui::Combo("##data-editor", &selected_data_editor, data_editors, 4);
+                const char* data_editor_labels[] = {studio::localization::tr("Personal Data"), studio::localization::tr("Item Data"), studio::localization::tr("Text Data"), studio::localization::tr("Evolution Data"), studio::localization::tr("Encounter Data"), studio::localization::tr("Move Data"), studio::localization::tr("Learnset Data"), studio::localization::bilingual("Trainer Data", "Donnees des dresseurs"), studio::localization::bilingual("Trainer Pokemon", "Pokemon des dresseurs"), studio::localization::bilingual("Egg Move Data", "Capacites oeuf"), studio::localization::bilingual("Mega Evolution Data", "Mega-Evolutions"), studio::localization::bilingual("Trainer Class Data", "Classes des dresseurs"), studio::localization::bilingual("TM / Tutor Data", "CT / Maitres des capacites"), studio::localization::bilingual("Shop / Mart Data", "Boutiques")};
+                if (ImGui::Combo("##data-editor", &selected_data_editor, [](void* data, int idx, const char** out) { *out = static_cast<const char**>(data)[idx]; return true; }, data_editor_labels, 14))
+                    studio::activity_log::add("Data", std::string("Open editor: ") + data_editors[selected_data_editor]);
                 ImGui::Separator();
                 if (selected_data_editor == 0)
                     personal_data_viewer.draw_browser();
@@ -1565,6 +2349,21 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                     text_data_viewer.draw_browser();
                 else if (selected_data_editor == 3)
                     evolution_data_viewer.draw_browser();
+                else if (selected_data_editor == 4)
+                    encounter_data_viewer.draw_browser();
+                else if (selected_data_editor == 5)
+                    move_data_viewer.draw_browser();
+                else if (selected_data_editor == 6)
+                    learnset_data_viewer.draw_browser();
+                else if (selected_data_editor == 7)
+                    trainer_data_viewer.draw_browser();
+                else if (selected_data_editor == 8)
+                    trainer_pokemon_viewer.draw_browser();
+                else if (selected_data_editor == 9) egg_move_viewer.draw_browser(std::filesystem::u8path(source));
+                else if (selected_data_editor == 10) mega_viewer.draw_browser(std::filesystem::u8path(source));
+                else if (selected_data_editor == 11) trainer_class_viewer.draw_browser(std::filesystem::u8path(source));
+                else if (selected_data_editor == 12) tm_tutor_viewer.draw_browser(std::filesystem::u8path(source));
+                else if (selected_data_editor == 13) shop_viewer.draw_browser(std::filesystem::u8path(source));
             }
             ImGui::End();
         } else if (warp_ride_workspace) {
@@ -2316,17 +3115,17 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
             if (renderer.player.active && scene) {
                 bool input = player_hovered && !(io.KeyCtrl && io.KeyShift) && !io.WantTextInput &&
                              (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
-                if (input && ImGui::IsKeyPressed(ImGuiKey_Escape))
+                if (input && binding_pressed(5))
                     renderer.player.active = false;
-                if (input && ImGui::IsKeyPressed(ImGuiKey_R))
+                if (input && binding_pressed(4))
                     start_player();
                 if (input && io.KeyCtrl && io.MouseWheel != 0)
                     renderer.player.adjust_running_speed(io.MouseWheel);
-                float side = input ? float(ImGui::IsKeyDown(ImGuiKey_D)) -
-                                         float(ImGui::IsKeyDown(ImGuiKey_A))
+                float side = input ? float(binding_down(3)) -
+                                         float(binding_down(2))
                                    : 0,
-                      ahead = input ? float(ImGui::IsKeyDown(ImGuiKey_W)) -
-                                          float(ImGui::IsKeyDown(ImGuiKey_S))
+                      ahead = input ? float(binding_down(0)) -
+                                          float(binding_down(1))
                                     : 0;
                 renderer.player.step(scene->spatial, side, ahead, io.KeyCtrl, io.KeyShift,
                                      io.DeltaTime);
@@ -2470,6 +3269,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
                 asset_studio.open_settings(std::filesystem::u8path(pokemon_settings));
             requested_studio = false;
             models.send_to_studio();
+            studio::activity_log::add("Studio", "Sent current model from Models to Studio");
             if (observer)
                 observer->scene_changed();
         }
@@ -2495,6 +3295,7 @@ int run(SDL_Window *window, int argc, char **argv, studio::ApplicationObserver *
         }
         if (auto request = models.take_studio_request()) {
             studio_workspace = true;
+            studio::activity_log::add("Studio", "Opening model from Models in Studio");
             asset_studio.request_leave([&, document = std::move(*request)]() mutable {
                 asset_studio.open_document(std::move(document));
                 studio_notice.clear();

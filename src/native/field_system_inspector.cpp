@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/field_system_inspector.h"
 #include "field/overworld_document.h"
@@ -203,7 +204,7 @@ void FieldSystemInspector::draw(ViewportCamera &camera, bool launcher) {
                 if (e.category == 9)
                     pedestrians.select(e.local_zone, e.row);
                 ImGui::TextUnformatted(e.name.c_str());
-                if (ImGui::Button("Frame")) {
+                if (ImGui::Button(studio::localization::tr("Frame"))) {
                     SpatialPoint low{INFINITY, INFINITY, INFINITY},
                         high{-INFINITY, -INFINITY, -INFINITY};
                     auto geometry = e.category == 9 ? pedestrians.route_geometry() : e.region;
@@ -232,7 +233,7 @@ void FieldSystemInspector::draw(ViewportCamera &camera, bool launcher) {
                     }
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Copy details")) {
+                if (ImGui::Button(studio::localization::tr("Copy details"))) {
                     std::string copy = e.name + "\n";
                     for (auto &p : e.properties)
                         copy += p.group + " / " + p.name + ": " + p.value + "\n";
@@ -409,7 +410,7 @@ void FieldSystemInspector::activity_controls(const FieldSystemEntry &e) {
     }
     ImGui::EndDisabled();
     ImGui::BeginDisabled(activity_pending_);
-    if (ImGui::Button("Save Project"))
+    if (ImGui::Button(studio::localization::tr("Save Project")))
         try {
             save_editor_project();
         } catch (const std::exception &error) {

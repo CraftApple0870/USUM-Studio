@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/undo_shortcuts.h"
 #include "native/tutorial_widgets.h"
 #include "native/interaction_inspector.h"
@@ -175,7 +176,7 @@ void InteractionInspector::draw_state_actions() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(160);
     ImGui::Combo("Access", &state_access_, "All accesses\0Reads\0Writes\0");
-    ImGui::Checkbox("Filter by ID", &state_filter_);
+    ImGui::Checkbox(studio::localization::tr("Filter by ID"), &state_filter_);
     ImGui::SameLine();
     ImGui::BeginDisabled(!state_filter_);
     ImGui::SetNextItemWidth(160);
@@ -319,7 +320,7 @@ void InteractionInspector::controls(const Environment *scene, const std::filesys
     if (show_launcher && available) {
         ImGui::Begin("Map inspector");
         ImGui::BeginDisabled(!available);
-        if (studio::TutorialWidgets::Button("interaction_inspector", "Inspect interaction",
+        if (studio::TutorialWidgets::Button("interaction_inspector", studio::localization::tr("Inspect interaction"),
                                             ImVec2(-1, 0))) {
             open_ = true;
             error_.clear();
@@ -443,7 +444,7 @@ void InteractionInspector::controls(const Environment *scene, const std::filesys
         }
         if (document_) {
             ImGui::BeginDisabled(!project_store() || (source_.shared && !shared_edit_));
-            if (ImGui::Button("Save Project")) {
+            if (ImGui::Button(studio::localization::tr("Save Project"))) {
                 try {
                     save_editor_project();
                 } catch (const std::exception &e) {
@@ -471,7 +472,7 @@ void InteractionInspector::controls(const Environment *scene, const std::filesys
                     draw_steps();
                     ImGui::EndTabItem();
                 }
-                if (studio::TutorialWidgets::BeginTabItem("interaction_inspector", "Actions")) {
+                if (studio::TutorialWidgets::BeginTabItem("interaction_inspector", studio::localization::tr("Actions"))) {
                     if (ImGui::RadioButton("Flags & work variables", state_view_))
                         state_view_ = true;
                     ImGui::SameLine();

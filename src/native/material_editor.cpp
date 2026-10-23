@@ -1,3 +1,5 @@
+#include "native/activity_log.h"
+#include "native/localization.h"
 #include "native/inspector_selector.h"
 #include "assets/overworld_character_asset.h"
 #include "assets/battle_effects.h"
@@ -14,6 +16,8 @@
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include <cctype>
+#include <set>
 #include <cmath>
 namespace studio {
 namespace {
@@ -96,6 +100,74 @@ TextureImage read_png(const std::filesystem::path &path) {
         std::memcpy(image.rgba.data() + y * width * 4,
                     static_cast<const std::uint8_t *>(rgba->pixels) + y * rgba->pitch, width * 4);
     return image;
+}
+// Resize a PNG before encoding it as a game texture. The original stays intact.
+TextureImage resize_imported_texture(const TextureImage &src, int width, int height, bool linear) {
+    require(width >= 8 && width <= 1024 && (width & (width - 1)) == 0 &&
+                height >= 8 && height <= 1024 && (height & (height - 1)) == 0,
+            "Texture dimensions must be powers of two between 8 and 1024");
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> input(
+        SDL_CreateSurface(src.width, src.height, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> output(
+        SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
+    require(bool(input) && bool(output), "Cannot allocate texture resizing surfaces");
+    for (int y = 0; y < src.height; ++y)
+        std::memcpy(static_cast<std::uint8_t *>(input->pixels) + y * input->pitch,
+                    src.rgba.data() + std::size_t(y) * src.width * 4,
+                    std::size_t(src.width) * 4);
+    require(SDL_BlitSurfaceScaled(input.get(), nullptr, output.get(), nullptr,
+                                  linear ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST),
+            "Texture scaling failed");
+    TextureImage result{std::uint16_t(width), std::uint16_t(height),
+                        Bytes(std::size_t(width) * height * 4)};
+    for (int y = 0; y < height; ++y)
+        std::memcpy(result.rgba.data() + std::size_t(y) * width * 4,
+                    static_cast<const std::uint8_t *>(output->pixels) + y * output->pitch,
+                    std::size_t(width) * 4);
+    return result;
+}
+
+// Export a decoded texture as a PNG through the native Windows/SDL save dialog.
+// The callback owns its data; it remains valid after the editor frame has ended.
+struct TexturePngSave {
+    Bytes png;
+};
+void texture_png_dialog_callback(void *userdata, const char *const *filelist, int) {
+    std::unique_ptr<TexturePngSave> task(static_cast<TexturePngSave *>(userdata));
+    if (!filelist || !filelist[0]) return;
+    try {
+        std::ofstream output(std::filesystem::u8path(filelist[0]), std::ios::binary);
+        if (output) output.write(reinterpret_cast<const char *>(task->png.data()),
+                                 std::streamsize(task->png.size()));
+    } catch (...) {}
+}
+Bytes encode_texture_png(const TextureImage &image) {
+    SDL_Surface *surface = SDL_CreateSurfaceFrom(
+        image.width, image.height, SDL_PIXELFORMAT_RGBA32,
+        const_cast<std::uint8_t *>(image.rgba.data()), image.width * 4);
+    require(surface != nullptr, "Cannot create PNG export surface");
+    SDL_IOStream *io = SDL_IOFromDynamicMem();
+    if (!io) { SDL_DestroySurface(surface); throw std::runtime_error(SDL_GetError()); }
+    bool ok = SDL_SavePNG_IO(surface, io, false);
+    SDL_DestroySurface(surface);
+    Bytes result;
+    if (ok) {
+        Sint64 size = SDL_GetIOSize(io);
+        const auto *data = static_cast<const std::uint8_t *>(SDL_GetPointerProperty(
+            SDL_GetIOProperties(io), SDL_PROP_IOSTREAM_DYNAMIC_MEMORY_POINTER, nullptr));
+        if (data && size > 0)
+            result.assign(data, data + size);
+    }
+    SDL_CloseIO(io);
+    require(ok && !result.empty(), "PNG encoding failed");
+    return result;
+}
+void request_texture_png_save(SDL_Window *window, const TextureImage &image) {
+    auto task = std::make_unique<TexturePngSave>();
+    task->png = encode_texture_png(image);
+    static const SDL_DialogFileFilter filters[] = {{"PNG image", "png"}};
+    SDL_ShowSaveFileDialog(texture_png_dialog_callback, task.release(), window,
+                           filters, 1, "texture.png");
 }
 struct CombinerChoice {
     unsigned value;
@@ -327,6 +399,7 @@ void MaterialEditor::open(ModelDocument model) {
     uv_editor_ = {};
     edit_uvs_ = false;
     document_ = std::make_unique<MaterialDocument>(std::move(model));
+    activity_log::add("Studio", "Opened model in Studio: " + document_->model.name);
     bind_project();
     file_.clear();
     message_.clear();
@@ -413,6 +486,8 @@ void MaterialEditor::dialog(int kind) {
     dialog_kind_ = kind;
     if (kind == 5 || kind == 6)
         choose_png(window_, dialog_);
+    else if (kind == 7)
+        choose_folder(window_, dialog_, "");
     else if (kind == 3)
         choose_folder(window_, dialog_, override_folder_.string().c_str());
     else if (kind == 4)
@@ -424,6 +499,7 @@ void MaterialEditor::dialog(int kind) {
 }
 void MaterialEditor::save() {
     if (save_editor_project()) {
+        activity_log::add("Studio", "Saved model edits to project");
         message_ = "Project saved. Stage Project builds the overlay.";
         return;
     }
@@ -436,6 +512,7 @@ void MaterialEditor::save() {
     write_file_atomic(file_,
                       View(reinterpret_cast<const std::uint8_t *>(data.data()), data.size()));
     document_->mark_saved();
+    activity_log::add("Studio", "Saved model edits: " + file_.string());
     message_ = "Saved edits: " + file_.string();
     if (save_then_leave_) {
         save_then_leave_ = false;
@@ -505,6 +582,11 @@ void MaterialEditor::poll() {
             }
             if (kind == 6 || kind == 5) {
                 texture_import_ = read_png(std::filesystem::u8path(path));
+                // Fresh imports never inherit the previous operation's resize choice.
+                texture_manual_resize_ = false;
+                texture_resize_width_ = texture_import_->width;
+                texture_resize_height_ = texture_import_->height;
+                texture_resize_filter_ = 0;
                 texture_add_ = kind == 6;
                 texture_format_ = texture_add_ || texture_replace_mask_ != 15 ? 1 : 0;
                 texture_import_channel_ = 0;
@@ -520,6 +602,9 @@ void MaterialEditor::poll() {
                     texture_import_base_ = document_->model.scene->textures.at(pending_texture_);
                 }
                 texture_import_open_ = true;
+                activity_log::add("Studio/Textures", "Loaded source PNG for " + pending_texture_ + " (not applied yet)");
+            } else if (kind == 7) {
+                import_matching_png_folder(std::filesystem::u8path(path));
             } else if (kind == 1) {
                 auto previous = file_;
                 file_ = std::filesystem::u8path(path);
@@ -584,7 +669,7 @@ void MaterialEditor::texture_import_panel() {
                     unsigned(u16(texture_import_source_, 106)), levels, levels == 1 ? "" : "s");
     ImGui::BeginDisabled(busy);
     if (!texture_add_) {
-        ImGui::TextUnformatted("Replace channels");
+        ImGui::TextUnformatted(studio::localization::tr("Replace channels"));
         const char *labels[] = {"R", "G", "B", "A"};
         for (unsigned channel = 0; channel < 4; ++channel) {
             if (channel)
@@ -601,12 +686,37 @@ void MaterialEditor::texture_import_panel() {
         if (texture_replace_mask_ != 15)
             ImGui::TextUnformatted("RGBA8 preserves unselected channels exactly.");
     }
+    // Opt-in manual sizing in Studio -> Textures and UVs -> Replace with PNG.
+    ImGui::SeparatorText(studio::localization::bilingual("Manual PNG resize", "Redimensionnement manuel du PNG"));
+    ImGui::Checkbox(studio::localization::bilingual("Resize imported PNG##studio_resize", "Redimensionner le PNG importe##studio_resize"),
+                    &texture_manual_resize_);
+    if (texture_manual_resize_) {
+        ImGui::InputInt(studio::localization::bilingual("Width (px)##studio_resize", "Largeur (px)##studio_resize"),
+                        &texture_resize_width_);
+        ImGui::InputInt(studio::localization::bilingual("Height (px)##studio_resize", "Hauteur (px)##studio_resize"),
+                        &texture_resize_height_);
+        ImGui::Combo(studio::localization::bilingual("Scaling filter##studio_resize", "Filtre de redimensionnement##studio_resize"),
+                     &texture_resize_filter_,
+                     studio::localization::bilingual("Nearest (sharp pixels)\0Linear (smooth)\0",
+                                                    "Voisin le plus proche (net)\0Lineaire (lisse)\0"));
+        ImGui::TextDisabled("%u x %u -> %d x %d", unsigned(texture_import_->width),
+                            unsigned(texture_import_->height), texture_resize_width_, texture_resize_height_);
+    }
     TextureImage replacement = *texture_import_;
     std::string channel_error;
-    if (!texture_add_ && (texture_replace_mask_ != 15 || texture_import_channel_ != 0)) {
+    if (texture_manual_resize_) {
+        try {
+            replacement = resize_imported_texture(*texture_import_, texture_resize_width_,
+                                                    texture_resize_height_, texture_resize_filter_ == 1);
+        } catch (const std::exception &e) {
+            channel_error = e.what();
+        }
+    }
+    if (channel_error.empty() && !texture_add_ &&
+        (texture_replace_mask_ != 15 || texture_import_channel_ != 0)) {
         try {
             replacement =
-                replace_texture_channels(texture_import_base_, *texture_import_,
+                replace_texture_channels(texture_import_base_, replacement,
                                          texture_replace_mask_, texture_import_channel_ - 1);
         } catch (const std::exception &e) {
             channel_error = e.what();
@@ -615,7 +725,7 @@ void MaterialEditor::texture_import_panel() {
     if (ImGui::BeginCombo("Output format", texture_format_
                                                ? texture_format_name(formats[texture_format_ - 1])
                                                : "Keep current format")) {
-        if (!texture_add_ && ImGui::Selectable("Keep current format", texture_format_ == 0))
+        if (!texture_add_ && ImGui::Selectable(studio::localization::tr("Keep current format"), texture_format_ == 0))
             texture_format_ = 0;
         for (int i = 0; i < 13; ++i)
             if (ImGui::Selectable(texture_format_name(formats[i]), texture_format_ == i + 1))
@@ -652,7 +762,7 @@ void MaterialEditor::texture_import_panel() {
     if (levels > 1)
         ImGui::Text("Keeps %u mip levels; changed textures regenerate lower levels.", levels);
     std::size_t size = 0;
-    unsigned w = texture_import_->width, h = texture_import_->height;
+    unsigned w = replacement.width, h = replacement.height;
     for (unsigned i = 0; i < levels; ++i) {
         size += texture_level_size(w, h, format);
         w = std::max(1u, w / 2);
@@ -675,13 +785,13 @@ void MaterialEditor::texture_import_panel() {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("material_editor", "Cancel")) {
+    if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Cancel"))) {
         texture_import_.reset();
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();
     if (busy) {
-        ImGui::TextUnformatted("Encoding texture...");
+        ImGui::TextUnformatted(studio::localization::tr("Encoding texture..."));
         if (texture_encoding_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             try {
                 auto encoded = texture_encoding_.get();
@@ -692,6 +802,8 @@ void MaterialEditor::texture_import_panel() {
                             "Texture changed during import; cancel and import again");
                     document_->replace_encoded_texture(pending_texture_, encoded);
                 }
+                activity_log::add("Studio/Textures",
+                    (texture_add_ ? "Added texture: " : "Replaced texture: ") + pending_texture_);
                 message_ = texture_add_ ? "Added texture. Bind it under Textures and UVs."
                                         : "Texture imported. Review the encoded result; Undo "
                                           "restores the previous texture.";
@@ -699,6 +811,7 @@ void MaterialEditor::texture_import_panel() {
                 ImGui::CloseCurrentPopup();
             } catch (const std::exception &e) {
                 texture_import_error_ = e.what();
+                activity_log::add("Studio/Textures", texture_import_error_, activity_log::Level::Error);
             }
         }
     }
@@ -706,6 +819,58 @@ void MaterialEditor::texture_import_panel() {
         ImGui::TextWrapped("%s", texture_import_error_.c_str());
     ImGui::EndPopup();
 }
+// Replace existing, uniquely named game texture slots with same-named PNG files.
+// Does not change geometry, materials or create texture resources.
+void MaterialEditor::import_matching_png_folder(const std::filesystem::path &folder) {
+    require(std::filesystem::is_directory(folder), "Choose an existing PNG folder");
+    require(document_ && document_->model.scene, "Open a Studio model first");
+    std::map<std::string, std::filesystem::path> files;
+    std::set<std::string> ambiguous;
+    auto lower = [](std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return char(std::tolower(c));
+        });
+        return value;
+    };
+    for (const auto &entry : std::filesystem::directory_iterator(folder)) {
+        if (!entry.is_regular_file() || lower(entry.path().extension().string()) != ".png")
+            continue;
+        auto key = lower(entry.path().stem().string());
+        if (files.contains(key))
+            ambiguous.insert(key);
+        else
+            files[key] = entry.path();
+    }
+    unsigned replaced = 0, missing = 0, failed = 0;
+    std::string first_error;
+    for (const auto &[name, index] : document_->model.texture_resources) {
+        // Studio texture keys can be prefixed with a container path.
+        auto filename = name.substr(name.find_last_of("/\\") == std::string::npos
+                                        ? 0 : name.find_last_of("/\\") + 1);
+        auto key = lower(filename);
+        if (key.size() > 4 && key.substr(key.size() - 4) == ".tga")
+            key.resize(key.size() - 4);
+        if (!files.contains(key) || ambiguous.contains(key)) {
+            ++missing;
+            continue;
+        }
+        try {
+            auto image = read_png(files.at(key));
+            // Keep source format and texture name, just replace RGBA pixels.
+            document_->replace_texture(name, image);
+            ++replaced;
+        } catch (const std::exception &e) {
+            ++failed;
+            if (first_error.empty())
+                first_error = name + ": " + e.what();
+        }
+    }
+    message_ = "Batch PNG: " + std::to_string(replaced) + " replaced, " +
+               std::to_string(missing) + " unmatched, " + std::to_string(failed) + " failed.";
+    if (!first_error.empty())
+        message_ += " First error: " + first_error;
+}
+
 void MaterialEditor::start_write() {
     document_->commit();
     auto snapshot = std::make_shared<MaterialDocument>(*document_);
@@ -755,12 +920,12 @@ void MaterialEditor::write_panel() {
     if (write_mode_ == 0) {
         ImGui::TextWrapped("Choose an override folder. An existing archive there will be updated, "
                            "preserving unrelated edits.");
-        if (studio::TutorialWidgets::Button("material_editor", "Choose override folder..."))
+        if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Choose override folder...")))
             dialog(3);
     } else if (write_mode_ == 1) {
         ImGui::TextWrapped(
             "Choose the matching archive file. Game archives may have no file extension.");
-        if (studio::TutorialWidgets::Button("material_editor", "Choose GARC file..."))
+        if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Choose GARC file...")))
             dialog(4);
     } else
         ImGui::TextWrapped("Write directly to the dump selected in Project. Reload affected "
@@ -827,7 +992,7 @@ void MaterialEditor::write_panel() {
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("material_editor", "Cancel")) {
+    if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Cancel"))) {
         ImGui::CloseCurrentPopup();
         write_visible_ = false;
     }
@@ -881,7 +1046,7 @@ void MaterialEditor::leave_popup() {
             }
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("material_editor", "Discard")) {
+        if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Discard"))) {
             ImGui::CloseCurrentPopup();
             if (document_)
                 document_->discard();
@@ -890,7 +1055,7 @@ void MaterialEditor::leave_popup() {
                 action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("material_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("material_editor", studio::localization::tr("Cancel"))) {
             ImGui::CloseCurrentPopup();
             leave_action_ = {};
         }
@@ -997,6 +1162,127 @@ void MaterialEditor::draw(EnvironmentRenderer &renderer, MaterialSelection &sele
     bool busy = dialog_kind_ || export_.valid() || texture_import_ || texture_encoding_.valid();
     ImGui::TextWrapped("%s%s", doc.model.name.c_str(), doc.dirty() ? " *" : "");
     draw_memory(false);
+    if (doc.model.is_pokemon() && doc.model.independent_asset.empty()) {
+        if (ImGui::Button(studio::localization::bilingual(
+                "3DS memory analysis...", "Analyse mémoire 3DS...")))
+            ImGui::OpenPopup("##studio_memory_analysis");
+        if (ImGui::BeginPopup("##studio_memory_analysis")) {
+            ImGui::TextUnformatted(studio::localization::bilingual(
+                "Pokemon resource memory analysis", "Analyse mémoire des ressources Pokémon"));
+            ImGui::Separator();
+            if (memory_) {
+                const auto &estimate = *memory_;
+                const double heap = double(PokemonMemoryEstimate::heap);
+                for (bool shiny : {false, true}) {
+                    const double used = double(estimate.total(shiny));
+                    ImGui::Text("%s : %.2f / %.2f MiB (%.0f%%)",
+                                shiny ? studio::localization::bilingual("Shiny", "Chromatique")
+                                      : studio::localization::bilingual("Normal", "Normal"),
+                                used / 1048576.0, heap / 1048576.0,
+                                used * 100.0 / heap);
+                    ImGui::ProgressBar(float(std::min(used / heap, 1.0)), ImVec2(-1, 0));
+                    if (used >= heap)
+                        ImGui::TextColored(ImVec4(1.f, .38f, .35f, 1.f), "%s",
+                            studio::localization::bilingual(
+                                "Over the reference budget: risk of loading failure.",
+                                "Dépassement de la référence : risque d'échec de chargement."));
+                    else if (heap - used <= 256.0 * 1024.0)
+                        ImGui::TextColored(ImVec4(1.f, .75f, .3f, 1.f), "%s",
+                            studio::localization::bilingual(
+                                "Low estimated margin: test in-game.",
+                                "Faible marge estimée : test en jeu nécessaire."));
+                }
+                ImGui::Separator();
+                ImGui::Text("%s : %.1f KiB", studio::localization::bilingual(
+                    "Model and shaders", "Modèle et shaders"), double(estimate.model) / 1024.0);
+                ImGui::Text("%s : %.1f KiB", studio::localization::bilingual(
+                    "Normal textures", "Textures normales"), double(estimate.normal_textures) / 1024.0);
+                ImGui::Text("%s : %.1f KiB", studio::localization::bilingual(
+                    "Shiny textures", "Textures chromatiques"), double(estimate.shiny_textures) / 1024.0);
+                ImGui::Text("%s : %.1f KiB", studio::localization::bilingual(
+                    "Animations", "Animations"), double(estimate.motions) / 1024.0);
+                ImGui::Text("%s : %.1f KiB", studio::localization::bilingual(
+                    "Settings", "Paramètres"), double(estimate.settings) / 1024.0);
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextUnformatted(studio::localization::bilingual(
+                    "Texture resize savings simulator (read-only)",
+                    "Simulateur d'économies par redimensionnement (lecture seule)"));
+                ImGui::TextWrapped("%s", studio::localization::bilingual(
+                    "Estimate how a proportional resize of ALL textures in each variant might "
+                    "change its resource budget. This is NOT a per-texture VRAM measurement.",
+                    "Estimez l'effet d'un redimensionnement proportionnel de TOUTES les textures "
+                    "de chaque variante. Ce n'est PAS une mesure VRAM par texture."));
+                static int resize_from = 512;
+                static int resize_to = 256;
+                static const int sizes[] = {64, 128, 256, 512, 1024, 2048};
+                auto dimension_picker = [&](const char *en, const char *fr, int &selected, const char *id) {
+                    ImGui::PushID(id);
+                    if (ImGui::BeginCombo(studio::localization::bilingual(en, fr),
+                                          (std::to_string(selected) + " px").c_str())) {
+                        for (int n : sizes) {
+                            bool current = selected == n;
+                            if (ImGui::Selectable((std::to_string(n) + " px").c_str(), current))
+                                selected = n;
+                            if (current) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::PopID();
+                };
+                dimension_picker("Current texture side (px)", "Côté actuel des textures (px)",
+                                 resize_from, "source_side");
+                dimension_picker("Target texture side (px)", "Côté cible des textures (px)",
+                                 resize_to, "target_side");
+                double ratio = double(resize_to) * double(resize_to) /
+                               (double(resize_from) * double(resize_from));
+                // A proportional scenario using texture-member byte totals, not an exact forecast.
+                // The size of a real archive may also include headers, padding and compression.
+                for (bool shiny : {false, true}) {
+                    double old_texture = double(shiny ? estimate.shiny_textures : estimate.normal_textures);
+                    double old_total = double(estimate.total(shiny));
+                    double projected = old_total - old_texture + old_texture * ratio;
+                    double saved = old_total - projected;
+                    ImGui::Text("%s: %.2f -> %.2f MiB (%+.0f KiB)",
+                                shiny ? studio::localization::bilingual("Shiny", "Chromatique")
+                                      : studio::localization::bilingual("Normal", "Normal"),
+                                old_total / 1048576.0, projected / 1048576.0,
+                                -saved / 1024.0);
+                    ImGui::ProgressBar(float(std::clamp(projected / heap, 0.0, 1.0)),
+                                       ImVec2(-1, 0));
+                    if (projected >= heap)
+                        ImGui::TextColored(ImVec4(1.f, .65f, .35f, 1.f), "%s",
+                            studio::localization::bilingual(
+                                "Still above the reference budget in this scenario.",
+                                "Toujours au-dessus de la référence dans cette simulation."));
+                }
+                ImGui::TextWrapped("%s", studio::localization::bilingual(
+                    "Approximation: square textures, same pixel format, and byte usage "
+                    "proportional to pixel area. Actual archive sizes, mipmaps, shared "
+                    "textures and runtime allocations may differ. No changes are applied. "
+                    "Re-run the analysis after a real edit and confirm on hardware.",
+                    "Approximation : textures carrées, même format et taille proportionnelle "
+                    "à la surface. Les archives, mipmaps, textures partagées et allocations "
+                    "réelles peuvent différer. Aucune modification n'est appliquée. "
+                    "Relancez l'analyse après modification et vérifiez sur console."));
+                ImGui::TextWrapped("%s", studio::localization::bilingual(
+                    "3.25 MiB is a stock model resource budget reference, NOT measured free 3DS memory. "
+                    "Runtime allocations and patched games may differ. Passing this check does not guarantee compatibility.",
+                    "3,25 Mio est une référence de budget de ressources du modèle d'origine, PAS la mémoire 3DS libre mesurée. "
+                    "Les allocations en jeu et les versions modifiées peuvent différer. Ce contrôle ne garantit pas la compatibilité."));
+                ImGui::TextWrapped("%s", studio::localization::bilingual(
+                    "Try reducing textures with the optional resize tools, then inspect this report again. "
+                    "No resource is changed by this analysis.",
+                    "Réduisez éventuellement les textures avec les outils facultatifs, puis consultez à nouveau ce rapport. "
+                    "Cette analyse ne modifie aucune ressource."));
+            } else {
+                ImGui::TextWrapped("%s: %s",
+                    studio::localization::bilingual("Estimate unavailable", "Estimation indisponible"),
+                    memory_error_.c_str());
+            }
+            ImGui::EndPopup();
+        }
+    }
     if (TutorialWidgets::Button("studio_resources", "Resources..."))
         resource_request_ = 1;
     ImGui::SameLine();
@@ -1111,7 +1397,7 @@ void MaterialEditor::draw(EnvironmentRenderer &renderer, MaterialSelection &sele
         auto edit = doc.edits().at(index);
         auto &material = scene.materials.at(index);
         bool changed = false;
-        if (ImGui::SmallButton("Material actions"))
+        if (ImGui::SmallButton(studio::localization::tr("Material actions")))
             ImGui::OpenPopup("Material actions");
         if (ImGui::BeginPopup("Material actions")) {
             if (studio::TutorialWidgets::Button("material_editor", "Reset material"))
@@ -1147,7 +1433,7 @@ void MaterialEditor::draw(EnvironmentRenderer &renderer, MaterialSelection &sele
                                                          &edit.fragment_lighting);
         }
         if (material_page_ == 1) {
-            if (ImGui::Button("Open UV view"))
+            if (ImGui::Button(studio::localization::tr("Open UV view")))
                 uv_request_ = true;
             ImGui::Combo("Texture unit", &texture_unit_, "Texture 0\0Texture 1\0Texture 2\0");
             auto &t = edit.textures[texture_unit_];
@@ -1223,11 +1509,64 @@ void MaterialEditor::draw(EnvironmentRenderer &renderer, MaterialSelection &sele
                     doc.reset_texture(t.name);
                 ImGui::EndDisabled();
                 ImGui::BeginDisabled(!doc.model.texture_resources.contains(t.name));
-                if (ImGui::Button("Paint texture..."))
+                if (ImGui::Button(studio::localization::tr("Paint texture...")))
                     texture_painter_.open(t.name);
                 ImGui::EndDisabled();
                 if (!doc.model.texture_resources.contains(t.name))
                     ImGui::TextWrapped("This texture has no writable source link.");
+                // Direct tools for the selected Studio texture, independent of PNG replacement.
+                if (auto source = doc.model.scene->textures.find(t.name);
+                    source != doc.model.scene->textures.end()) {
+                    if (ImGui::Button(studio::localization::bilingual(
+                            "Extract texture as PNG...", "Extraire la texture en PNG..."))) {
+                        try { request_texture_png_save(window_, source->second); }
+                        catch (const std::exception &e) { message_ = e.what(); }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button(studio::localization::bilingual(
+                            "Resize texture...", "Redimensionner la texture..."))) {
+                        resize_studio_texture_name_ = t.name;
+                        resize_studio_width_ = source->second.width;
+                        resize_studio_height_ = source->second.height;
+                        resize_studio_filter_ = 0;
+                        ImGui::OpenPopup("Studio manual texture resize");
+                    }
+                    if (ImGui::BeginPopupModal("Studio manual texture resize", nullptr,
+                                               ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ImGui::TextUnformatted(studio::localization::bilingual(
+                            "Resize and export a PNG (does not alter the game texture).",
+                            "Redimensionner et exporter un PNG (sans modifier la texture du jeu)."));
+                        ImGui::InputInt(studio::localization::bilingual(
+                            "Width (px)##studio-manual", "Largeur (px)##studio-manual"),
+                            &resize_studio_width_);
+                        ImGui::InputInt(studio::localization::bilingual(
+                            "Height (px)##studio-manual", "Hauteur (px)##studio-manual"),
+                            &resize_studio_height_);
+                        ImGui::RadioButton(studio::localization::bilingual(
+                            "Nearest##studio-manual", "Pixels nets##studio-manual"),
+                            &resize_studio_filter_, 0);
+                        ImGui::SameLine();
+                        ImGui::RadioButton(studio::localization::bilingual(
+                            "Linear##studio-manual", "Lissage##studio-manual"),
+                            &resize_studio_filter_, 1);
+                        if (ImGui::Button(studio::localization::bilingual(
+                                "Resize and save PNG...", "Redimensionner et enregistrer le PNG..."))) {
+                            try {
+                                auto current = doc.model.scene->textures.find(resize_studio_texture_name_);
+                                require(current != doc.model.scene->textures.end(), "Texture not found");
+                                auto resized = resize_imported_texture(
+                                    current->second, resize_studio_width_, resize_studio_height_,
+                                    resize_studio_filter_ == 1);
+                                request_texture_png_save(window_, resized);
+                                ImGui::CloseCurrentPopup();
+                            } catch (const std::exception &e) { message_ = e.what(); }
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button(studio::localization::bilingual("Cancel", "Annuler")))
+                            ImGui::CloseCurrentPopup();
+                        ImGui::EndPopup();
+                    }
+                }
                 bool uv = material.inputs[texture_unit_].source <= 2;
                 ImGui::BeginDisabled(!uv);
                 changed |= ImGui::DragFloat2("Scale", t.transform.data(), .01f, -1000, 1000);
@@ -1372,7 +1711,7 @@ void MaterialEditor::draw(EnvironmentRenderer &renderer, MaterialSelection &sele
         if (material_page_ == 3 &&
             studio::TutorialWidgets::CollapsingHeader("material_editor", "Rendering",
                                                       ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::Button("Edit lighting tables..."))
+            if (ImGui::Button(studio::localization::tr("Edit lighting tables...")))
                 lighting_editor_.open(index);
             changed |= ImGui::SliderInt("Draw layer", &edit.layer, 0, 7);
             changed |= ImGui::SliderInt("Draw priority", &edit.priority, 0, 7);
@@ -1475,7 +1814,7 @@ void MaterialEditor::uvs(const EnvironmentRenderer &renderer, const MaterialSele
         mapping_request_ = true;
     if ((document_->model.area < 0 || document_->model.project_asset) &&
         !document_->model.clothing) {
-        studio::TutorialWidgets::Checkbox("material_editor", "Edit UVs", &edit_uvs_);
+        studio::TutorialWidgets::Checkbox("material_editor", studio::localization::tr("Edit UVs"), &edit_uvs_);
         if (edit_uvs_) {
             if (editing_available())
                 uv_editor_.draw(*document_, renderer, selection.material, unsigned(texture_unit_));
@@ -1502,7 +1841,7 @@ void MaterialEditor::uvs(const EnvironmentRenderer &renderer, const MaterialSele
     ImGui::TextDisabled("Texture %d / UV %u", texture_unit_, input.source);
     auto texture = renderer.texture(m.texture_inputs[texture_unit_]);
     if (!bgfx::isValid(texture)) {
-        ImGui::TextUnformatted("No texture available");
+        ImGui::TextUnformatted(studio::localization::tr("No texture available"));
         ImGui::End();
         return;
     }
@@ -1616,6 +1955,11 @@ void MaterialEditor::resource_panel(const MaterialSelection &selection,
     ImGui::EndDisabled();
     ImGui::Separator();
     ImGui::InputText("New texture name", texture_name_, sizeof(texture_name_));
+    if (studio::TutorialWidgets::Button("material_editor", "Import matching PNG folder..."))
+        dialog(7);
+    ImGui::TextWrapped("Batch replaces existing textures by PNG filename (without .png), "
+                       "preserving their game names and formats. Other textures are untouched. "
+                       "It does not add new texture slots or bind materials.");
     if (studio::TutorialWidgets::Button("material_editor", "Add texture from PNG...")) {
         pending_texture_ = texture_name_;
         dialog(6);

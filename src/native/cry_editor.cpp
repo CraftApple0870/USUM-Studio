@@ -1,3 +1,5 @@
+#include "native/activity_log.h"
+#include "native/localization.h"
 #include "audio/wave_import.h"
 #include "native/tutorial_widgets.h"
 #include "native/cry_editor.h"
@@ -173,6 +175,7 @@ void CryEditor::update(bool active) {
                 require_audio_output(document_->dump, file);
                 write_file_atomic(file, export_audio_wav(current_audio_));
                 notice_ = "Current cry clip exported as WAV.";
+                activity_log::add("Audio/Cries", notice_);
             } else if (action_ == FileAction::Import) {
                 require(std::filesystem::file_size(file) <= 128 * 1024 * 1024,
                         "Import a WAV smaller than 128 MiB");
@@ -182,6 +185,7 @@ void CryEditor::update(bool active) {
                 trim_end_ = float(double(imported_.frames()) / imported_.rate);
                 gain_ = 1;
                 notice_ = "WAV loaded. Review trim and gain, then Apply replacement.";
+                activity_log::add("Audio/Cries", notice_);
             } else if (action_ == FileAction::Save) {
                 if (file.extension().empty())
                     file += ".usum-cry";
@@ -205,6 +209,7 @@ void CryEditor::update(bool active) {
     if (export_.valid() && export_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         try {
             notice_ = export_.get();
+            activity_log::add("Audio/Cries", notice_);
             error_.clear();
         } catch (const std::exception &e) {
             error_ = e.what();
@@ -236,7 +241,7 @@ void CryEditor::update(bool active) {
                 }
             }
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("cry_editor", "Discard cry changes")) {
+            if (studio::TutorialWidgets::Button("cry_editor", studio::localization::tr("Discard cry changes"))) {
                 document_->discard();
                 select(species_, form_);
                 auto action = std::move(leave_);
@@ -245,7 +250,7 @@ void CryEditor::update(bool active) {
                 action();
             }
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("cry_editor", "Cancel")) {
+            if (studio::TutorialWidgets::Button("cry_editor", studio::localization::tr("Cancel"))) {
                 leave_ = {};
                 ImGui::CloseCurrentPopup();
             }
@@ -341,7 +346,7 @@ void CryEditor::draw(const ModelDocument &model) {
         ImGui::TextWrapped("Forms without a separate cry mapping also use their base cry.");
         ImGui::TreePop();
     }
-    if (studio::TutorialWidgets::Button("cry_editor", "Import WAV..."))
+    if (studio::TutorialWidgets::Button("cry_editor", studio::localization::tr("Import WAV...")))
         choose(FileAction::Import);
     if (!imported_.pcm.empty()) {
         ImGui::TextWrapped("Input: %s", import_name_.c_str());
@@ -354,11 +359,19 @@ void CryEditor::draw(const ModelDocument &model) {
                          float(double(imported_.frames()) / imported_.rate), "%.2f s");
         ImGui::SetNextItemWidth(-85);
         ImGui::SliderFloat("Gain", &gain_, 0, 4, "%.2fx");
-        ImGui::TextWrapped(
-            "Replacement: mono 16 kHz DSP ADPCM. Trim and gain take effect when you apply.");
-        if (studio::TutorialWidgets::Button("cry_editor", "Apply replacement")) {
+        const bool french = std::string(studio::localization::language_code()) == "fr";
+        ImGui::SeparatorText(french ? "Fréquence d'échantillonnage" : "Sample rate");
+        ImGui::RadioButton((french ? "16 000 Hz (défaut)" : "16,000 Hz (default)"), &replacement_rate_, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton((french ? "32 728 Hz (expérimental)" : "32,728 Hz (experimental)"), &replacement_rate_, 1);
+        ImGui::TextWrapped("%s", (french ? "32 728 Hz est expérimental : compatibilité sur 3DS non vérifiée."
+                    : "32,728 Hz is experimental; compatibility with USUM on 3DS is unverified."));
+        ImGui::TextWrapped("%s", (french ? "Remplacement : DSP ADPCM mono. Le découpage et le gain sont appliqués lors de la validation."
+                    : "Replacement: mono DSP ADPCM. Trim and gain take effect when you apply."));
+        if (studio::TutorialWidgets::Button("cry_editor", studio::localization::tr("Apply replacement"))) {
             try {
-                auto prepared = prepare_cry(imported_, trim_start_, trim_end_, gain_);
+                auto prepared = prepare_cry(imported_, trim_start_, trim_end_, gain_,
+                                            replacement_rate_ == 1 ? 32728u : 16000u);
                 document_->replace(binding_.wave_archive, encode_cry(original_, prepared));
                 refresh();
                 error_.clear();

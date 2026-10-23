@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "formats/bone_palette.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
@@ -332,7 +334,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
                                             : std::to_string(editable_.size()) + " meshes enabled";
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##geometry-mesh", mesh_label.c_str(), ImGuiComboFlags_HeightLarge)) {
-        if (studio::TutorialWidgets::Button("geometry_editor", "All visible")) {
+        if (studio::TutorialWidgets::Button("geometry_editor", studio::localization::tr("All visible"))) {
             editable_.clear();
             for (unsigned i = 0; i < model_->meshes.size(); ++i)
                 if (renderer.draw_visible(i))
@@ -340,7 +342,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
             update_selection();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("geometry_editor", "None")) {
+        if (studio::TutorialWidgets::Button("geometry_editor", studio::localization::tr("None"))) {
             editable_.clear();
             elements_.clear();
             update_selection();
@@ -482,7 +484,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
             select_all(renderer);
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("geometry_editor", "Clear selection")) {
+        if (studio::TutorialWidgets::Button("geometry_editor", studio::localization::tr("Clear selection"))) {
             elements_.clear();
             update_selection();
         }
@@ -490,10 +492,10 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
         studio::TutorialWidgets::Checkbox("geometry_editor", "Box (B)", &box_tool_);
         studio::TutorialWidgets::Checkbox("geometry_editor", "X-ray selection", &through_);
         studio::TutorialWidgets::Checkbox("geometry_editor", "Triangle outlines", &wire_);
-        studio::TutorialWidgets::Checkbox("geometry_editor", "All visible meshes", &all_triangles_);
+        studio::TutorialWidgets::Checkbox("geometry_editor", studio::localization::tr("All visible meshes"), &all_triangles_);
         if (studio::TutorialWidgets::Checkbox("geometry_editor", "Keep seams together", &seams_))
             update_selection();
-        if (ImGui::CollapsingHeader("Controls"))
+        if (ImGui::CollapsingHeader(studio::localization::tr("Controls")))
             ImGui::TextWrapped("Click: select | Ctrl: add/remove | B: box\nMiddle drag: orbit | "
                                "Shift+middle: pan | RMB+WASD: fly");
         if (studio::TutorialWidgets::Button("geometry_editor", "Isolate enabled"))
@@ -529,7 +531,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputFloat3("##geometry-scale", scale_.data());
                 ImGui::BeginDisabled(selected_.empty() || preview.motion >= 0);
-                if (studio::TutorialWidgets::Button("geometry_editor", "Apply transform"))
+                if (studio::TutorialWidgets::Button("geometry_editor", studio::localization::tr("Apply transform")))
                     try {
                         auto next = *model_;
                         affected_ = influences(renderer);
@@ -550,7 +552,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
             ImGui::SetNextItemWidth(80);
             ImGui::Combo("Flatten axis", &flatten_axis_, "X\0Y\0Z\0");
             ImGui::BeginDisabled(selected_.empty() || preview.motion >= 0);
-            if (studio::TutorialWidgets::Button("geometry_editor", "Flatten selection"))
+            if (studio::TutorialWidgets::Button("geometry_editor", studio::localization::tr("Flatten selection")))
                 try {
                     auto next = *model_;
                     affected_ = influences(renderer);
@@ -563,7 +565,7 @@ void GeometryEditor::panel(MaterialDocument &doc, ModelDocument &preview,
                     error_ = e.what();
                 }
             ImGui::EndDisabled();
-            studio::TutorialWidgets::Checkbox("geometry_editor", "Recalculate normals",
+            studio::TutorialWidgets::Checkbox("geometry_editor", studio::localization::tr("Recalculate normals"),
                                               &recompute_);
         }
     } else {
@@ -748,20 +750,20 @@ bool GeometryEditor::viewport(MaterialDocument &doc, ModelDocument &preview,
     bool editing = preview.motion < 0 && !test_scene_ && !editable_.empty();
     if (input && editing && task_ != 1 && hovered && axis_ < 0 && !box_drag_ && !io.KeyCtrl &&
         !viewport_navigating()) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("models.geometry_move", ImGuiKey_G))
             mode_ = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_R))
+        if (studio::configurable_keys::pressed("models.geometry_rotate", ImGuiKey_R))
             mode_ = 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_S))
+        if (studio::configurable_keys::pressed("models.geometry_scale", ImGuiKey_S))
             mode_ = 2;
-        if (ImGui::IsKeyPressed(ImGuiKey_B))
+        if (studio::configurable_keys::pressed("models.box_select", ImGuiKey_B))
             box_tool_ = !box_tool_;
         int previous = selection_mode_;
-        if (task_ == 0 && ImGui::IsKeyPressed(ImGuiKey_1))
+        if (task_ == 0 && studio::configurable_keys::pressed("models.select_vertices", ImGuiKey_1))
             selection_mode_ = 0;
-        if (task_ == 0 && ImGui::IsKeyPressed(ImGuiKey_2))
+        if (task_ == 0 && studio::configurable_keys::pressed("models.select_edges", ImGuiKey_2))
             selection_mode_ = 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_3))
+        if (studio::configurable_keys::pressed("models.select_faces", ImGuiKey_3))
             selection_mode_ = 2;
         if (previous != selection_mode_) {
             elements_.clear();

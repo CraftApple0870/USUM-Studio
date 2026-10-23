@@ -1,3 +1,5 @@
+#include "native/configurable_keys.h"
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/encounter_editor.h"
 #include "field/collision_surfaces.h"
@@ -243,7 +245,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
             }
             return changed;
         };
-        if (studio::TutorialWidgets::CollapsingHeader("encounter_editor", "Add encounter region")) {
+        if (studio::TutorialWidgets::CollapsingHeader("encounter_editor", studio::localization::tr("Add encounter region"))) {
             if (ImGui::BeginCombo("Local zone", std::to_string(new_zone_).c_str())) {
                 for (unsigned z = 0; z < document_->zone_count(); ++z)
                     if (ImGui::Selectable(std::to_string(z).c_str(), z == new_zone_))
@@ -294,7 +296,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
                 }
             }
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("encounter_editor", "Duplicate region"))
+            if (studio::TutorialWidgets::Button("encounter_editor", studio::localization::tr("Duplicate region")))
                 attempt([&] {
                     ensure_editable();
                     auto added = document_->duplicate(unsigned(selected_));
@@ -302,7 +304,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
                     select(int(added));
                 });
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("encounter_editor", "Delete region"))
+            if (studio::TutorialWidgets::Button("encounter_editor", studio::localization::tr("Delete region")))
                 attempt([&] {
                     ensure_editable();
                     document_->erase(unsigned(selected_));
@@ -374,7 +376,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
                                            "supports boxes and cylinders.");
                 }
                 if (studio::TutorialWidgets::CollapsingHeader("encounter_editor",
-                                                              "Ground types and table",
+                                                              studio::localization::tr("Ground types and table"),
                                                               ImGuiTreeNodeFlags_DefaultOpen)) {
                     table_combo("Encounter table", region_draft_.table);
                     ImGui::TextWrapped(
@@ -400,7 +402,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
                         ImGui::EndTable();
                     }
                     if (studio::TutorialWidgets::Button("encounter_editor",
-                                                        "Apply ground types and table"))
+                                                        studio::localization::tr("Apply ground types and table")))
                         attempt([&] {
                             ensure_editable();
                             auto selected = selected_;
@@ -513,7 +515,7 @@ void EncounterEditor::draw(bool loading, ViewportCamera &camera,
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("encounter_editor", "Save Project"))
+        if (studio::TutorialWidgets::Button("encounter_editor", studio::localization::tr("Save Project")))
             attempt([&] {
                 save_editor_project();
             });
@@ -687,11 +689,11 @@ bool EncounterEditor::gizmo(const float *view, const float *projection, ImVec2 o
     draw->PopClipRect();
     if (hovered && drag_axis_ < 0 && !io.WantTextInput && !io.KeyCtrl &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_G))
+        if (studio::configurable_keys::pressed("maps.encounter_move", ImGuiKey_G))
             mode_ = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_R) && shape.type)
+        if (studio::configurable_keys::pressed("maps.encounter_rotate", ImGuiKey_R) && shape.type)
             mode_ = 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_S))
+        if (studio::configurable_keys::pressed("maps.encounter_scale", ImGuiKey_S))
             mode_ = 2;
     }
     auto ring_angle = [&] {

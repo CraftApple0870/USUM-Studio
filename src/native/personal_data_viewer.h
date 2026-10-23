@@ -4,6 +4,7 @@
 #include "core/game_profile.h"
 #include "native/project_binding.h"
 #include "native/localization.h"
+#include "native/data_names.h"
 #include "native/personal_data_events.h"
 #include <imgui.h>
 #include <algorithm>
@@ -31,7 +32,7 @@ public:
     void draw(const std::filesystem::path &dump, bool active) {
         if (!active) return;
         // A normal dockable ImGui window, controlled by the Data dockspace.
-        if (!ImGui::Begin("Personal Data", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        if (!ImGui::Begin(studio::localization::tr("Personal Data"), nullptr, ImGuiWindowFlags_NoCollapse)) {
             ImGui::End();
             return;
         }
@@ -72,7 +73,7 @@ public:
             show_external_path_ = !show_external_path_;
         if (show_external_path_) {
             ImGui::SetNextItemWidth(-180.f);
-            ImGui::InputTextWithHint("##personal-external-path", "Chemin complet de personal.garc", external_path_, sizeof(external_path_));
+            ImGui::InputTextWithHint("##personal-external-path", studio::localization::bilingual("Full path to personal.garc", "Chemin complet de personal.garc"), external_path_, sizeof(external_path_));
             ImGui::SameLine();
             if (ImGui::Button("Ouvrir fichier###personal-external-open")) {
                 if (external_path_[0]) {
@@ -83,14 +84,15 @@ public:
         }
         ImGui::SameLine();
         ImGui::TextDisabled("Archive 0/1/7 | Export via le projet USUM Studio");
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fichier : %s", path.string().c_str());
-        if (!error_.empty()) ImGui::TextWrapped("Erreur : %s", error_.c_str());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(studio::localization::bilingual("File: %s", "Fichier : %s"), path.string().c_str());
+        if (!error_.empty()) ImGui::TextWrapped(studio::localization::bilingual("Error: %s", "Erreur : %s"), error_.c_str());
         if (!archive_) {
             ImGui::Separator();
             ImGui::TextWrapped("Ouvre une ROM extraite ou un projet, puis clique sur Charger / Actualiser.");
             ImGui::End(); return;
         }
 
+        names_.load(project_store() ? project_store()->source : dump);
         const int max_id = static_cast<int>(std::min<std::size_t>(archive_->size(), 2147483647));
         ImGui::SameLine();
         if (ImGui::Button("Integrer les changements au projet###personal-export")) export_archive(path);
@@ -103,15 +105,15 @@ public:
         if (edits_.contains(selected_)) { ImGui::SameLine(); ImGui::TextDisabled("[MODIFIE]"); }
         ImGui::SameLine(); ImGui::TextDisabled("%zu octets", bytes_.size());
         ImGui::Separator();
-        if (ImGui::Button("< Precedent") && selected_ > 0) select(selected_ - 1);
+        if (ImGui::Button(studio::localization::bilingual("< Previous", "< Precedent")) && selected_ > 0) select(selected_ - 1);
         ImGui::SameLine();
-        if (ImGui::Button("Suivant >") && selected_ + 1 < max_id) select(selected_ + 1);
+        if (ImGui::Button(studio::localization::bilingual("Next >", "Suivant >")) && selected_ + 1 < max_id) select(selected_ + 1);
         ImGui::SameLine();
         ImGui::TextDisabled("Index %d / %d", selected_, max_id - 1);
         if (bytes_.size() >= 8) {
             if (ImGui::BeginTabBar("##personal-tabs")) {
-                if (ImGui::BeginTabItem("Statistiques")) {
-                    static const char *labels[] = {"PV", "Attaque", "Defense", "Vitesse", "Attaque speciale", "Defense speciale"};
+                if (ImGui::BeginTabItem(studio::localization::bilingual("Stats", "Statistiques"))) {
+                    const char *labels[] = {"PV", studio::localization::bilingual("Attack", "Attaque"), studio::localization::bilingual("Defense", "Defense"), studio::localization::bilingual("Speed", "Vitesse"), studio::localization::bilingual("Sp. Attack", "Attaque speciale"), studio::localization::bilingual("Sp. Defense", "Defense speciale")};
                     ImGui::Spacing();
                     for (int i = 0; i < 6; ++i) {
                         ImGui::PushID(i);
@@ -122,7 +124,7 @@ public:
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
-                    ImGui::SeparatorText("Edition des statistiques");
+                    ImGui::SeparatorText(studio::localization::bilingual("Edit stats", "Edition des statistiques"));
                     ImGui::TextDisabled("Valeurs en memoire ; seules les copies exportees sont ecrites.");
                     for (int i = 0; i < 6; ++i) {
                         int value = int(bytes_[std::size_t(i)]);
@@ -134,26 +136,26 @@ public:
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
-                    ImGui::SeparatorText("Types");
-                    static const char *types[] = {"Normal", "Combat", "Vol", "Poison", "Sol", "Roche", "Insecte", "Spectre", "Acier", "Feu", "Eau", "Plante", "Electrik", "Psy", "Glace", "Dragon", "Tenebres", "Fee"};
-                    ImGui::Text("Type principal : %s", bytes_[6] < 18 ? types[bytes_[6]] : "Inconnu");
-                    ImGui::Text("Type secondaire : %s", bytes_[7] < 18 ? types[bytes_[7]] : "Inconnu");
+                    ImGui::SeparatorText(studio::localization::bilingual("Types", "Types"));
+                    const char *types[] = {"Normal", studio::localization::bilingual("Fighting", "Combat"), studio::localization::bilingual("Flying", "Vol"), studio::localization::bilingual("Poison", "Poison"), studio::localization::bilingual("Ground", "Sol"), studio::localization::bilingual("Rock", "Roche"), studio::localization::bilingual("Bug", "Insecte"), studio::localization::bilingual("Ghost", "Spectre"), studio::localization::bilingual("Steel", "Acier"), studio::localization::bilingual("Fire", "Feu"), studio::localization::bilingual("Water", "Eau"), studio::localization::bilingual("Grass", "Plante"), studio::localization::bilingual("Electric", "Electrik"), studio::localization::bilingual("Psychic", "Psy"), studio::localization::bilingual("Ice", "Glace"), studio::localization::bilingual("Dragon", "Dragon"), studio::localization::bilingual("Dark", "Tenebres"), studio::localization::bilingual("Fairy", "Fee")};
+                    ImGui::Text(studio::localization::bilingual("Primary type: %s", "Type principal : %s"), bytes_[6] < 18 ? types[bytes_[6]] : studio::localization::bilingual("Unknown", "Inconnu"));
+                    ImGui::Text(studio::localization::bilingual("Secondary type: %s", "Type secondaire : %s"), bytes_[7] < 18 ? types[bytes_[7]] : studio::localization::bilingual("Unknown", "Inconnu"));
                     for (int i = 6; i <= 7; ++i) {
                         int type = bytes_[std::size_t(i)] < 18 ? int(bytes_[std::size_t(i)]) : 0;
                         ImGui::PushID(i);
-                        if (ImGui::Combo(i == 6 ? "Type 1" : "Type 2", &type, types, 18)) {
+                        if (ImGui::Combo(i == 6 ? studio::localization::bilingual("Type 1", "Type 1") : studio::localization::bilingual("Type 2", "Type 2"), &type, types, 18)) {
                             bytes_[std::size_t(i)] = std::uint8_t(type);
                             remember_edit();
                         }
                         ImGui::PopID();
                     }
-                    if (edits_.contains(selected_) && ImGui::Button("Annuler modifications de cette entree")) {
+                    if (edits_.contains(selected_) && ImGui::Button(studio::localization::bilingual("Discard changes for this entry", "Annuler modifications de cette entree"))) {
                         edits_.erase(selected_);
                         load_entry();
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Diagnostic 0-9-4")) {
+                if (ImGui::BeginTabItem(studio::localization::bilingual("0-9-4 diagnostics", "Diagnostic 0-9-4"))) {
                     ImGui::TextWrapped("Controle en lecture seule : correspondance espece / forme entre Personal Data et ressources 3D.");
                     ImGui::Text("Espece : %d | Forme : %d", species_pick_, form_pick_);
                     if (ImGui::Button("Analyser 0/9/4###pd-diagnostic")) {
@@ -170,7 +172,7 @@ public:
                         ImGui::TextWrapped("%s", model_diag_.c_str());
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Formes et references")) {
+                if (ImGui::BeginTabItem(studio::localization::bilingual("Forms and references", "Formes et references"))) {
                     ImGui::TextDisabled("Structure USUM (84 octets) - pointeurs en lecture seule");
                     if (bytes_.size() < 0x21) {
                         ImGui::TextDisabled("Entree insuffisante pour lire les pointeurs.");
@@ -178,21 +180,21 @@ public:
                         const unsigned raw_pointer = word(bytes_, 0x1C);
                         const unsigned sprite = word(bytes_, 0x1E);
                         const unsigned count = bytes_[0x20];
-                        ImGui::Text("Index Personal actuel : %d", selected_);
+                        ImGui::Text(studio::localization::bilingual("Current Personal index: %d", "Index Personal actuel : %d"), selected_);
                         ImGui::Text("FormStatsIndex (0x1C) : %u", raw_pointer);
                         ImGui::Text("FormeSprite (0x1E) : %u", sprite);
                         ImGui::Text("FormeCount (0x20) : %u", count);
-                        ImGui::SeparatorText("Correspondances de formes");
+                        ImGui::SeparatorText(studio::localization::bilingual("Form mappings", "Correspondances de formes"));
                         if (selected_ >= 0 && selected_ < int(owners_.size()) && !owners_[selected_].empty()) {
                             for (const auto &owner : owners_[selected_])
                                 ImGui::BulletText("Espece %d - forme %d", owner.species, owner.form);
                         } else if (selected_ < base_species_count_) {
-                            ImGui::Text("Espece de base : %d (forme 0)", selected_);
+                            ImGui::Text(studio::localization::bilingual("Base species: %d (form 0)", "Espece de base : %d (forme 0)"), selected_);
                         } else {
-                            ImGui::TextDisabled("Aucune espece associee par les pointeurs lus.");
+                            ImGui::TextDisabled(studio::localization::bilingual("No species associated with the parsed pointers.", "Aucune espece associee par les pointeurs lus."));
                         }
                         if (selected_ >= 0 && selected_ < base_species_count_ && count > 1) {
-                            ImGui::SeparatorText("Formes declarees par cette espece");
+                            ImGui::SeparatorText(studio::localization::bilingual("Forms declared by this species", "Formes declarees par cette espece"));
                             if (raw_pointer == 0) {
                                 ImGui::TextDisabled("ATTENTION : aucune entree de formes (pointeur nul).");
                             } else {
@@ -220,7 +222,7 @@ public:
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Hexadecimal")) {
+                if (ImGui::BeginTabItem(studio::localization::bilingual("Hexadecimal", "Hexadecimal"))) {
                     ImGui::BeginChild("##personal-hex", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
                     for (std::size_t i = 0; i < bytes_.size(); i += 16) {
                         char line[160];
@@ -251,7 +253,7 @@ public:
         }
         const int max_id = static_cast<int>(std::min<std::size_t>(archive_->size(), 2147483647));
         if (max_id <= 0) return;
-        ImGui::SeparatorText("Navigateur Personal Data");
+        ImGui::SeparatorText(studio::localization::bilingual("Personal Data browser", "Navigateur Personal Data"));
         ImGui::TextUnformatted("Selection par espece / forme");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputInt("Espece###personal-species", &species_pick_))
@@ -260,9 +262,9 @@ public:
             const int count = form_count(species_pick_);
             form_pick_ = std::clamp(form_pick_, 0, std::max(0, count - 1));
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::BeginCombo("Forme###personal-form", form_pick_ == 0 ? "0 - Normale" : ("Forme " + std::to_string(form_pick_)).c_str())) {
+            if (ImGui::BeginCombo("Forme###personal-form", form_pick_ == 0 ? studio::localization::bilingual("0 - Normal", "0 - Normale") : (studio::localization::bilingual("Form ", "Forme ") + std::to_string(form_pick_)).c_str())) {
                 for (int form = 0; form < count; ++form) {
-                    const std::string label = form == 0 ? "0 - Normale" : "Forme " + std::to_string(form);
+                    const std::string label = form == 0 ? studio::localization::bilingual("0 - Normal", "0 - Normale") : studio::localization::bilingual("Form ", "Forme ") + std::to_string(form);
                     if (ImGui::Selectable(label.c_str(), form_pick_ == form)) form_pick_ = form;
                 }
                 ImGui::EndCombo();
@@ -273,15 +275,15 @@ public:
                 else status_ = "Index de forme non valide dans cette archive.";
             }
         }
-        ImGui::SeparatorText("Toutes les entrees");
+        ImGui::SeparatorText(studio::localization::bilingual("All entries", "Toutes les entrees"));
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputTextWithHint("##personal-search", "Filtrer par numero (ex. 172)", search_, sizeof(search_));
+        ImGui::InputTextWithHint("##personal-search", studio::localization::bilingual("Filter by number (e.g. 172)", "Filtrer par numero (ex. 172)"), search_, sizeof(search_));
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputInt("##personal-id", &requested_id_)) {
             requested_id_ = std::clamp(requested_id_, 0, max_id - 1);
             select(requested_id_);
         }
-        ImGui::TextDisabled("Aller a l'index (0 a %d)", max_id - 1);
+        ImGui::TextDisabled(studio::localization::bilingual("Go to index (0 to %d)", "Aller a l'index (0 a %d)"), max_id - 1);
         ImGui::Separator();
         ImGui::BeginChild("##personal-entry-list", ImVec2(0, 0), false);
         // ImGuiListClipper conserve la fluidite meme avec plusieurs milliers d'entrees.
@@ -307,9 +309,8 @@ public:
 
 private:
     void entry_row(int id) {
-        char label[64];
-        std::snprintf(label, sizeof(label), "%04d  -  Entree %d", id, id);
-        if (ImGui::Selectable(label, selected_ == id)) select(id);
+        const std::string label = std::to_string(id) + " - " + names_.personal_label(id) + "###personal-entry-" + std::to_string(id);
+        if (ImGui::Selectable(label.c_str(), selected_ == id)) select(id);
     }
     void select(int id) {
         if (selected_ == id) { requested_id_ = id; return; }
@@ -363,7 +364,7 @@ private:
                 report += "Correspondance espece / forme detectee dans les deux archives.\n";
             model_diag_ = std::move(report);
         } catch (const std::exception &e) {
-            model_diag_ = std::string("Analyse impossible : ") + e.what();
+            model_diag_ = std::string(studio::localization::bilingual("Analysis unavailable: ", "Analyse impossible : ")) + e.what();
         }
     }
 
@@ -459,15 +460,15 @@ private:
             std::filesystem::create_directories(folder);
             const auto output = folder / "audit-formes-017-094.txt";
             std::ofstream out(output, std::ios::binary | std::ios::trunc);
-            if (!out) throw std::runtime_error("Impossible de creer le rapport TXT.");
+            if (!out) throw std::runtime_error(studio::localization::bilingual("Unable to create TXT report.", "Impossible de creer le rapport TXT."));
             const auto contents = report.str();
             out.write(contents.data(), std::streamsize(contents.size()));
             out.close();
-            if (!out) throw std::runtime_error("Erreur pendant l'ecriture du rapport TXT.");
-            audit_status_ = "Audit termine : " + std::to_string(serious) + " erreur(s), " +
+            if (!out) throw std::runtime_error(studio::localization::bilingual("Error writing TXT report.", "Erreur pendant l'ecriture du rapport TXT."));
+            audit_status_ = studio::localization::bilingual("Audit completed: ", "Audit termine : ") + std::to_string(serious) + " erreur(s), " +
                             std::to_string(warnings) + " ecart(s). Rapport : " + output.string();
         } catch (const std::exception &e) {
-            audit_status_ = std::string("Audit impossible : ") + e.what();
+            audit_status_ = std::string(studio::localization::bilingual("Audit unavailable: ", "Audit impossible : ")) + e.what();
         }
     }
 
@@ -507,8 +508,8 @@ private:
         } catch (...) { return -1; }
     }
     void export_archive(const std::filesystem::path &source) {
-        if (!archive_) { status_ = "Charge d'abord une archive."; return; }
-        if (edits_.empty()) { status_ = "Aucune modification a exporter."; return; }
+        if (!archive_) { status_ = studio::localization::bilingual("Load an archive first.", "Charge d'abord une archive."); return; }
+        if (edits_.empty()) { status_ = studio::localization::bilingual("No changes to export.", "Aucune modification a exporter."); return; }
         if (loaded_path_ != source) {
             status_ = "Archive externe ouverte : reviens aux donnees du projet avant d'integrer des modifications.";
             return;
@@ -525,7 +526,7 @@ private:
             }
             const auto *project = project_store();
             if (!project) {
-                status_ = "Ouvre un projet USUM Studio pour exporter dans ses exports classiques.";
+                status_ = studio::localization::bilingual("Open a USUM Studio project to use standard export.", "Ouvre un projet USUM Studio pour exporter dans ses exports classiques.");
                 return;
             }
             const auto output = project->root / "scratch" / "personal-data-editor.garc";
@@ -542,7 +543,7 @@ private:
             notify_personal_data_changed();
             observed_revision_ = personal_data_revision;
             status_ = "Personal Data integrees au projet. Utilise la commande Exporter du projet pour generer exports/.";
-        } catch (const std::exception &e) { status_ = std::string("Echec export : ") + e.what(); }
+        } catch (const std::exception &e) { status_ = std::string(studio::localization::bilingual("Export failed: ", "Echec export : ")) + e.what(); }
     }
     struct FormOwner { int species; int form; };
     static unsigned word(const Bytes &value, std::size_t offset) {
@@ -584,6 +585,7 @@ private:
             }
         }
     }
+    DataNames names_;
     std::filesystem::path loaded_path_;
     std::uint64_t observed_revision_ = 0;
     bool external_source_ = false;

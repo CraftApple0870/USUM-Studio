@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/pickup_editor.h"
 #include "field/area.h"
@@ -133,7 +134,7 @@ void PickupEditor::draw(bool loading, bool show_launcher) {
     if (show_launcher) {
         ImGui::Begin("Map inspector");
         ImGui::BeginDisabled(index < 0 || loading);
-        if (studio::TutorialWidgets::Button("pickup_editor", "Edit selected pickup", ImVec2(-1, 0)))
+        if (studio::TutorialWidgets::Button("pickup_editor", studio::localization::tr("Edit selected pickup"), ImVec2(-1, 0)))
             open_ = true;
         ImGui::EndDisabled();
         if (!document_ && !message_.empty())
@@ -256,7 +257,7 @@ void PickupEditor::draw(bool loading, bool show_launcher) {
                 });
             ImGui::EndDisabled();
             ImGui::SameLine();
-            if (studio::TutorialWidgets::Button("pickup_editor", "Save Project")) {
+            if (studio::TutorialWidgets::Button("pickup_editor", studio::localization::tr("Save Project"))) {
                 try {
                     save_editor_project();
                     message_ = "Saved. Stage Project stores changed members; Build game export "

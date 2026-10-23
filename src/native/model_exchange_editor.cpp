@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/tutorial_widgets.h"
 #include "native/model_exchange_editor.h"
 #include "assets/blender_preview.h"
@@ -133,7 +134,7 @@ void ModelExchangeEditor::draw(MaterialDocument &doc, ModelDocument &preview,
             ImGui::EndChild();
             if (!message_.empty())
                 ImGui::TextWrapped("%s", message_.c_str());
-            if (ImGui::Button("Import geometry")) {
+            if (ImGui::Button(studio::localization::tr("Import geometry"))) {
                 try {
                     require(owner_ == doc.identity() &&
                                 destination_.source == doc.model_exchange().source,
@@ -154,7 +155,7 @@ void ModelExchangeEditor::draw(MaterialDocument &doc, ModelDocument &preview,
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
+            if (ImGui::Button(studio::localization::tr("Cancel"))) {
                 incoming_.reset();
                 ImGui::CloseCurrentPopup();
             }
@@ -212,14 +213,14 @@ void ModelExchangeEditor::draw(MaterialDocument &doc, ModelDocument &preview,
             SDL_ShowOpenFileDialog(callback, owner, window, filters, 1, initial.c_str(), false);
     };
     ImGui::BeginDisabled(pending());
-    if (studio::TutorialWidgets::Button("model_exchange_editor", "Export for Blender", {-1, 0}))
+    if (studio::TutorialWidgets::Button("model_exchange_editor", studio::localization::tr("Export for Blender"), {-1, 0}))
         choose(true);
-    if (studio::TutorialWidgets::Button("model_exchange_editor", "Import from Blender", {-1, 0}))
+    if (studio::TutorialWidgets::Button("model_exchange_editor", studio::localization::tr("Import from Blender"), {-1, 0}))
         choose(false);
     ImGui::BeginDisabled(preview.motion < 0 || preview.shadow_model || preview.area >= 0);
-    if (studio::TutorialWidgets::Button("model_exchange_editor", "Export selected motion", {-1, 0}))
+    if (studio::TutorialWidgets::Button("model_exchange_editor", studio::localization::tr("Export selected motion"), {-1, 0}))
         choose(true, true);
-    if (studio::TutorialWidgets::Button("model_exchange_editor", "Import selected motion", {-1, 0}))
+    if (studio::TutorialWidgets::Button("model_exchange_editor", studio::localization::tr("Import selected motion"), {-1, 0}))
         choose(false, true);
     ImGui::EndDisabled();
     ImGui::EndDisabled();

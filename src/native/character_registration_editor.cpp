@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/character_registration_editor.h"
 #include "assets/character_registration.h"
 #include "assets/model_library.h"
@@ -50,7 +51,7 @@ bool CharacterRegistrationEditor::draw(const ModelDocument &donor) {
     }
     const bool pending = !pending_key.empty();
     ImGui::BeginDisabled(pending);
-    if (ImGui::Button("Register character and reload", {-1, 0})) {
+    if (ImGui::Button(studio::localization::tr("Register character and reload"), {-1, 0})) {
         try {
             save_editor_project();
             require(!project->unstaged() && project->base == project->current_overlay,
@@ -91,7 +92,7 @@ bool CharacterRegistrationEditor::draw(const ModelDocument &donor) {
         }
     } else if (registered_) {
         ImGui::Text("New character ID: %u", *registered_);
-        if (ImGui::Button("Open new character in Studio", {-1, 0})) {
+        if (ImGui::Button(studio::localization::tr("Open new character in Studio"), {-1, 0})) {
             try {
                 created_ = std::make_unique<ModelDocument>(load_library_model(
                     project->source, project->source / TargetProfile::character_archive,
@@ -182,7 +183,7 @@ bool CharacterRegistrationEditor::draw_conversion(MaterialDocument &document,
             if (ImGui::BeginCombo(
                     "##Motion", selected < 0 ? "Bind pose (no animation)"
                                              : document.model.motions.at(selected).name.c_str())) {
-                if (ImGui::Selectable("Bind pose (no animation)", selected < 0))
+                if (ImGui::Selectable(studio::localization::tr("Bind pose (no animation)"), selected < 0))
                     selected = -1;
                 for (unsigned i = 0; i < document.model.motions.size(); ++i) {
                     const auto &m = document.model.motions[i];
@@ -199,7 +200,7 @@ bool CharacterRegistrationEditor::draw_conversion(MaterialDocument &document,
                 ImGui::EndCombo();
             }
             ImGui::BeginDisabled(selected < 0);
-            if (ImGui::Button("Preview motion")) {
+            if (ImGui::Button(studio::localization::tr("Preview motion"))) {
                 preview.select_motion(selected);
                 motion_preview_ = true;
             }
@@ -218,7 +219,7 @@ bool CharacterRegistrationEditor::draw_conversion(MaterialDocument &document,
                 return e.second.kind == "character-registration";
             });
         ImGui::BeginDisabled(pending || conversion_donor_ < 0);
-        const bool create = ImGui::Button("Create character and reload", {-1, 0});
+        const bool create = ImGui::Button(studio::localization::tr("Create character and reload"), {-1, 0});
         ImGui::EndDisabled();
         if (create) {
             save_editor_project();

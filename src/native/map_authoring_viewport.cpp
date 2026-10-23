@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/viewport_navigation.h"
 #include "native/tutorial_widgets.h"
 #include "native/map_authoring_workspace.h"
@@ -778,7 +779,7 @@ void MapAuthoringWorkspace::asset_editor_viewport(std::uint32_t) {
     ImGui::Begin("Authoring viewport");
     ImGui::TextUnformatted("Extract object");
     ImGui::SameLine();
-    if (studio::TutorialWidgets::Button("map_authoring_viewport", "Frame"))
+    if (studio::TutorialWidgets::Button("map_authoring_viewport", studio::localization::tr("Frame")))
         asset_camera_.fit(asset_edit_scene_->low, asset_edit_scene_->high);
     studio::TutorialWidgets::RadioButton("map_authoring_viewport", "Face", &asset_selection_mode_,
                                          0);
@@ -788,7 +789,7 @@ void MapAuthoringWorkspace::asset_editor_viewport(std::uint32_t) {
     ImGui::SameLine();
     studio::TutorialWidgets::RadioButton("map_authoring_viewport", "Connected",
                                          &asset_selection_mode_, 2);
-    if (ImGui::Button("Controls"))
+    if (ImGui::Button(studio::localization::tr("Controls")))
         ImGui::OpenPopup("Authoring controls");
     if (ImGui::BeginPopup("Authoring controls")) {
         ImGui::TextWrapped("Click: select | Ctrl: add / toggle | Box: select through");
@@ -1003,7 +1004,7 @@ void MapAuthoringWorkspace::viewport(std::uint32_t frame) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     auto &camera = inspect_ ? asset_camera_ : map_camera_;
-    if (studio::TutorialWidgets::Button("map_authoring_viewport", "Frame")) {
+    if (studio::TutorialWidgets::Button("map_authoring_viewport", studio::localization::tr("Frame"))) {
         if (inspect_) {
             const auto &asset = resources_.at(std::size_t(resource_));
             camera.fit(asset.low, asset.high);
@@ -1047,7 +1048,7 @@ void MapAuthoringWorkspace::viewport(std::uint32_t frame) {
             }
             ImGui::SameLine();
             ImGui::BeginDisabled(terrain_selection_.empty());
-            if (studio::TutorialWidgets::Button("map_authoring_viewport", "Frame selection")) {
+            if (studio::TutorialWidgets::Button("map_authoring_viewport", studio::localization::tr("Frame selection"))) {
                 const auto points = terrain_positions(document_->grid(), *document_->ground());
                 auto low = points.at(terrain_selection_.front()), high = low;
                 for (auto index : terrain_selection_)
@@ -1064,7 +1065,7 @@ void MapAuthoringWorkspace::viewport(std::uint32_t frame) {
         }
     }
     if (!inspect_) {
-        if (!existing_mode_) studio::TutorialWidgets::Checkbox("map_authoring_viewport", "Grid guide", &show_grid_);
+        if (!existing_mode_) studio::TutorialWidgets::Checkbox("map_authoring_viewport", studio::localization::tr("Grid guide"), &show_grid_);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(document_->ground()
                                   ? "Shows cell edges across the entire authored terrain, "
@@ -1072,14 +1073,14 @@ void MapAuthoringWorkspace::viewport(std::uint32_t frame) {
                                   : "A local tile guide samples source-map ground below the search "
                                     "ceiling and shows through scenery.");
         ImGui::SameLine();
-        studio::TutorialWidgets::Checkbox("map_authoring_viewport", "Cutaway", &cutaway_);
+        studio::TutorialWidgets::Checkbox("map_authoring_viewport", studio::localization::tr("Cutaway"), &cutaway_);
         if (cutaway_) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(110);
             ImGui::DragFloat("Height", &cut_height_, 5);
         }
     }
-    if (ImGui::Button("Controls"))
+    if (ImGui::Button(studio::localization::tr("Controls")))
         ImGui::OpenPopup("Authoring controls");
     if (ImGui::BeginPopup("Authoring controls")) {
         ImGui::TextWrapped(

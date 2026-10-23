@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/undo_shortcuts.h"
 #include "native/lighting_table_editor.h"
 #include <algorithm>
@@ -63,7 +64,7 @@ void LightingTableEditor::draw(MaterialDocument &doc, bool editable) {
             return "Table " + std::to_string(std::distance(tables_.begin(), found) + 1);
         };
         if (ImGui::BeginCombo("Table", label(binding.table).c_str())) {
-            if (ImGui::Selectable("None", !binding.table)) {
+            if (ImGui::Selectable(studio::localization::tr("None"), !binding.table)) {
                 binding.table = 0;
                 apply_bindings = true;
             }

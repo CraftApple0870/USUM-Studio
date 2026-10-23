@@ -2,6 +2,7 @@
 #include "native/project_binding.h"
 #include "audio/audio_document.h"
 #include "native/cry_editor.h"
+#include <set>
 namespace studio {
 class AudioEditor {
   public:
@@ -18,7 +19,7 @@ class AudioEditor {
   private:
     ProjectBinding project_;
     void bind_project();
-    enum class Action { Import, Wave, Save, Load, Export };
+    enum class Action { Import, Wave, BatchWave, Save, Load, Export };
     void choose(Action action);
     void select(std::size_t index);
     void play();
@@ -37,6 +38,8 @@ class AudioEditor {
     std::future<std::vector<PokemonEntry>> pokemon_job_;
     std::filesystem::path dump_, saved_;
     std::size_t selected_ = 0, cry_ = 0, cursor_ = 0;
+    std::set<std::size_t> multiple_selection_;
+    std::size_t selection_anchor_ = std::size_t(-1);
     int category_ = 0;
     float volume_ = .5f;
     char search_[160]{};

@@ -1,3 +1,5 @@
+#include "native/activity_log.h"
+#include "native/localization.h"
 #include "native/canvas_navigation.h"
 #include "inspector_selector.h"
 #include "native/tutorial_widgets.h"
@@ -15,7 +17,8 @@ bgfx::TextureHandle upload(const TextureImage &image) {
                                  BGFX_SAMPLER_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
                                  bgfx::copy(image.rgba.data(), narrow(image.rgba.size())));
 }
-TextureImage png_read(const std::filesystem::path &file, const NativeImageInfo &expected) {
+TextureImage png_read(const std::filesystem::path &file, const NativeImageInfo &expected,
+                      bool auto_resize, SDL_ScaleMode scale_mode) {
     require(std::filesystem::file_size(file) <= 64 * 1024 * 1024,
             "PNG exceeds the 64 MiB import limit");
     auto b = read_file(file);
@@ -25,7 +28,8 @@ TextureImage png_read(const std::filesystem::path &file, const NativeImageInfo &
                b[p + 3];
     };
     auto w = big(16), h = big(20);
-    require(w == expected.width && h == expected.height,
+    require(w > 0 && h > 0 && w <= 16384 && h <= 16384, "Invalid PNG dimensions");
+    require(auto_resize || (w == expected.width && h == expected.height),
             "Expected " + std::to_string(expected.width) + " x " + std::to_string(expected.height) +
                 " pixels; received " + std::to_string(w) + " x " + std::to_string(h));
     std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> input(
@@ -35,12 +39,42 @@ TextureImage png_read(const std::filesystem::path &file, const NativeImageInfo &
         SDL_ConvertSurface(input.get(), SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
     require(bool(rgba) && unsigned(rgba->w) == w && unsigned(rgba->h) == h,
             "PNG pixel conversion failed");
-    TextureImage image{std::uint16_t(w), std::uint16_t(h), Bytes(std::size_t(w) * h * 4)};
-    for (unsigned y = 0; y < h; ++y)
-        std::memcpy(image.rgba.data() + std::size_t(y) * w * 4,
-                    static_cast<const std::uint8_t *>(rgba->pixels) + std::size_t(y) * rgba->pitch,
-                    w * 4);
+    SDL_Surface *pixels = rgba.get();
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> scaled(nullptr, SDL_DestroySurface);
+    if (w != expected.width || h != expected.height) {
+        scaled.reset(SDL_ScaleSurface(rgba.get(), expected.width, expected.height, scale_mode));
+        require(bool(scaled), std::string("PNG resize failed: ") + SDL_GetError());
+        pixels = scaled.get();
+    }
+    TextureImage image{expected.width, expected.height,
+                       Bytes(std::size_t(expected.width) * expected.height * 4)};
+    for (unsigned y = 0; y < expected.height; ++y)
+        std::memcpy(image.rgba.data() + std::size_t(y) * expected.width * 4,
+                    static_cast<const std::uint8_t *>(pixels->pixels) + std::size_t(y) * pixels->pitch,
+                    std::size_t(expected.width) * 4);
     return image;
+}
+TextureImage resized_image(const TextureImage &source, int width, int height,
+                           SDL_ScaleMode mode) {
+    require(width > 0 && height > 0 && width <= 4096 && height <= 4096,
+            "Resize dimensions must be between 1 and 4096 pixels");
+    require(std::size_t(width) * std::size_t(height) <= 4096u * 4096u,
+            "Resized image is too large");
+    auto *input = SDL_CreateSurfaceFrom(source.width, source.height,
+                                        SDL_PIXELFORMAT_RGBA32,
+                                        const_cast<std::uint8_t *>(source.rgba.data()),
+                                        int(source.width * 4));
+    require(input != nullptr, SDL_GetError());
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> original(input, SDL_DestroySurface);
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> output(
+        SDL_ScaleSurface(original.get(), width, height, mode), SDL_DestroySurface);
+    require(bool(output), SDL_GetError());
+    TextureImage result{unsigned(width), unsigned(height), Bytes(std::size_t(width) * height * 4)};
+    for (int y = 0; y < height; ++y)
+        std::memcpy(result.rgba.data() + std::size_t(y) * width * 4,
+                    static_cast<const std::uint8_t *>(output->pixels) + std::size_t(y) * output->pitch,
+                    std::size_t(width) * 4);
+    return result;
 }
 void png_write(const std::filesystem::path &file, const TextureImage &image) {
     auto *surface =
@@ -95,6 +129,11 @@ ImageEditor::~ImageEditor() {
     clear_textures();
 }
 void ImageEditor::clear_textures() {
+    if (bgfx::isValid(compare_original_)) bgfx::destroy(compare_original_);
+    if (bgfx::isValid(compare_current_)) bgfx::destroy(compare_current_);
+    compare_original_ = BGFX_INVALID_HANDLE;
+    compare_current_ = BGFX_INVALID_HANDLE;
+    compare_index_ = std::size_t(-1);
     if (bgfx::isValid(preview_))
         bgfx::destroy(preview_);
     preview_ = BGFX_INVALID_HANDLE;
@@ -160,10 +199,24 @@ void ImageEditor::filter() {
 }
 void ImageEditor::select(std::size_t index) {
     selected_ = index;
+    if (compare_index_ != index) {
+        if (bgfx::isValid(compare_original_)) bgfx::destroy(compare_original_);
+        if (bgfx::isValid(compare_current_)) bgfx::destroy(compare_current_);
+        compare_original_ = BGFX_INVALID_HANDLE;
+        compare_current_ = BGFX_INVALID_HANDLE;
+        compare_index_ = std::size_t(-1);
+    }
+    activity_log::add("Images", "Selected image entry " + std::to_string(index));
+    manual_width_ = 0;
+    manual_height_ = 0;
     imported_.clear();
     refresh();
 }
 void ImageEditor::refresh() {
+    if (bgfx::isValid(compare_original_)) bgfx::destroy(compare_original_);
+    if (bgfx::isValid(compare_current_)) bgfx::destroy(compare_current_);
+    compare_original_ = compare_current_ = BGFX_INVALID_HANDLE;
+    compare_index_ = std::size_t(-1);
     if (bgfx::isValid(preview_))
         bgfx::destroy(preview_);
     preview_ = BGFX_INVALID_HANDLE;
@@ -196,6 +249,7 @@ void ImageEditor::save(const std::filesystem::path &file) {
     document_->save(file);
     saved_ = file;
     notice_ = "Image project saved.";
+    activity_log::add("Images", notice_);
     if (leave_) {
         auto action = std::move(leave_);
         leave_ = {};
@@ -203,7 +257,9 @@ void ImageEditor::save(const std::filesystem::path &file) {
     }
 }
 void ImageEditor::import_file(const std::filesystem::path &file) {
-    auto image = png_read(file, document_->catalog.images.at(selected_).info);
+    auto image = png_read(file, document_->catalog.images.at(selected_).info,
+                          auto_resize_png_, resize_filter_ == 0 ? SDL_SCALEMODE_NEAREST
+                                                                 : SDL_SCALEMODE_LINEAR);
     auto source = document_->current(selected_);
     pending_import_ = file;
     error_.clear();
@@ -224,7 +280,7 @@ void ImageEditor::choose(Action action) {
         return;
     }
     action_ = action;
-    if (action == Action::Export) {
+    if (action == Action::Export || action == Action::ExportSelectedPng) {
         choose_folder(window_, dialog_, nullptr);
         return;
     }
@@ -258,8 +314,8 @@ void ImageEditor::choose(Action action) {
         SDL_ShowOpenFileDialog(callback, owner, window_, project, 1, nullptr, false);
     else
         SDL_ShowSaveFileDialog(callback, owner, window_,
-                               action == Action::ExportPng ? png : project, 1,
-                               action == Action::ExportPng ? "image.png"
+                               (action == Action::ExportPng || action == Action::ResizePng) ? png : project, 1,
+                               (action == Action::ExportPng || action == Action::ResizePng) ? "image.png"
                                : saved_.empty()            ? "images.usum-images"
                                                            : saved_.string().c_str());
 }
@@ -300,12 +356,34 @@ void ImageEditor::update() {
             auto file = std::filesystem::u8path(path);
             if (action_ == Action::Import) {
                 import_file(file);
-            } else if (action_ == Action::ExportPng) {
+            } else if (action_ == Action::ExportPng || action_ == Action::ResizePng) {
                 if (file.extension().empty())
                     file += ".png";
-                png_write(file, decode_native_image(original_ ? document_->original(selected_)
-                                                              : document_->current(selected_)));
-                notice_ = "PNG exported.";
+                auto image = decode_native_image(original_ ? document_->original(selected_)
+                                                              : document_->current(selected_));
+                if (action_ == Action::ResizePng)
+                    image = resized_image(image, manual_width_, manual_height_,
+                                          manual_filter_ == 0 ? SDL_SCALEMODE_NEAREST
+                                                              : SDL_SCALEMODE_LINEAR);
+                png_write(file, image);
+                activity_log::add("Images", "Saved PNG: " + file.string());
+                notice_ = action_ == Action::ResizePng
+                              ? studio::localization::bilingual("Resized PNG saved.", "PNG redimensionné enregistré.")
+                              : studio::localization::bilingual("PNG exported.", "PNG exporté.");
+            } else if (action_ == Action::ExportSelectedPng) {
+                require(!multiple_selection_.empty(), "Select images before batch export");
+                auto snapshot = *document_;
+                auto selection = multiple_selection_;
+                export_ = std::async(std::launch::async,
+                    [snapshot = std::move(snapshot), selection = std::move(selection), file] {
+                        std::filesystem::create_directories(file);
+                        for (auto index : selection) {
+                            auto image = decode_native_image(snapshot.current(index));
+                            png_write(file / ("image_" + std::to_string(index) + ".png"), image);
+                        }
+                        return std::to_string(selection.size()) + " PNG images exported to " + file.string();
+                    });
+                activity_log::add("Images", "Started batch PNG export: " + std::to_string(multiple_selection_.size()) + " images");
             } else if (action_ == Action::Save) {
                 if (file.extension().empty())
                     file += ".usum-images";
@@ -336,12 +414,14 @@ void ImageEditor::update() {
             original_ = false;
             refresh();
             notice_ = "Replacement applied. Preview shows the native encoded pixels.";
+            activity_log::add("Images", "Replaced image entry " + std::to_string(selected_));
         } catch (const std::exception &e) {
             error_ = e.what();
         }
     if (export_.valid() && export_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         try {
             notice_ = export_.get();
+            activity_log::add("Images", notice_);
             error_.clear();
         } catch (const std::exception &e) {
             error_ = e.what();
@@ -355,7 +435,7 @@ void ImageEditor::update() {
             ImGui::EndPopup();
             return;
         }
-        ImGui::TextUnformatted("Save image replacements before continuing?");
+        ImGui::TextUnformatted(studio::localization::tr("Save image replacements before continuing?"));
         if (!error_.empty())
             ImGui::TextWrapped("%s", error_.c_str());
         bool pending;
@@ -376,7 +456,7 @@ void ImageEditor::update() {
                 error_ = e.what();
             }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("image_editor", "Discard image changes")) {
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::tr("Discard image changes"))) {
             document_->discard();
             clear_textures();
             refresh();
@@ -386,7 +466,7 @@ void ImageEditor::update() {
             action();
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("image_editor", "Cancel")) {
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::tr("Cancel"))) {
             leave_ = {};
             ImGui::CloseCurrentPopup();
         }
@@ -411,7 +491,7 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
     ImGui::EndDisabled();
     if (scan_.valid()) {
         ImGui::ProgressBar(float(progress_) / float(std::max(1u, total_.load())));
-        ImGui::TextUnformatted("Reading image sources...");
+        ImGui::TextUnformatted(studio::localization::tr("Reading image sources..."));
     }
     if (document_) {
         if (document_->catalog.dump != dump)
@@ -434,7 +514,7 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##image-language",
                               language_ < 0 ? "All language subfiles" : languages[language_])) {
-            if (ImGui::Selectable("All language subfiles", language_ < 0)) {
+            if (ImGui::Selectable(studio::localization::tr("All language subfiles"), language_ < 0)) {
                 language_ = -1;
                 filter();
             }
@@ -446,6 +526,17 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
             ImGui::EndCombo();
         }
         ImGui::Text("%zu images", filtered_.size());
+        if (!multiple_selection_.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("| %zu %s", multiple_selection_.size(),
+                studio::localization::bilingual("selected (Ctrl / Shift)", "selectionnees (Ctrl / Shift)"));
+            ImGui::SameLine();
+            if (ImGui::SmallButton(studio::localization::bilingual("Export selection as PNG...", "Exporter selection en PNG...")))
+                choose(Action::ExportSelectedPng);
+            ImGui::SameLine();
+            if (ImGui::SmallButton(studio::localization::bilingual("Clear selection", "Effacer la selection")))
+                multiple_selection_.clear();
+        }
         ImGui::BeginChild("Image entries", {0, 0});
         ImGuiListClipper clipper;
         float row = 40;
@@ -457,9 +548,36 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
                 auto &item = document_->catalog.images[index];
                 ImGui::PushID(int(index));
                 auto start = ImGui::GetCursorScreenPos();
-                if (ImGui::Selectable("##image-row", selected_ == index, 0,
-                                      {0, row - ImGui::GetStyle().ItemSpacing.y}))
-                    select(index);
+                if (ImGui::Selectable("##image-row", multiple_selection_.contains(index) || selected_ == index, 0,
+                                      {0, row - ImGui::GetStyle().ItemSpacing.y})) {
+                    const auto &io = ImGui::GetIO();
+                    if (io.KeyCtrl) {
+                        if (!multiple_selection_.erase(index)) multiple_selection_.insert(index);
+                        selection_anchor_ = index;
+                    } else if (io.KeyShift && selection_anchor_ != std::size_t(-1)) {
+                        auto first = std::find(filtered_.begin(), filtered_.end(), selection_anchor_);
+                        auto last = std::find(filtered_.begin(), filtered_.end(), index);
+                        if (first != filtered_.end() && last != filtered_.end()) {
+                            if (first > last) std::swap(first, last);
+                            for (; first <= last; ++first) multiple_selection_.insert(*first);
+                        }
+                    } else {
+                        multiple_selection_.clear();
+                        selection_anchor_ = index;
+                        select(index);
+                    }
+                }
+                if (ImGui::BeginPopupContextItem("##image-context")) {
+                    if (ImGui::MenuItem(studio::localization::bilingual("Open image", "Ouvrir l'image"))) {
+                        multiple_selection_.clear(); select(index);
+                    }
+                    if (ImGui::MenuItem(studio::localization::bilingual("Compare original / modified", "Comparer original / modifie"))) {
+                        select(index); compare_open_ = true;
+                    }
+                    if (ImGui::MenuItem(studio::localization::bilingual("Copy resource name", "Copier le nom")))
+                        ImGui::SetClipboardText(item.name.c_str());
+                    ImGui::EndPopup();
+                }
                 if (!thumbnails_.contains(index) && loaded < 2) {
                     ++loaded;
                     try {
@@ -492,6 +610,9 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
     ImGui::Begin("Image preview");
     if (document_ && selected_ < document_->catalog.images.size()) {
         ImGui::BeginDisabled(busy);
+        if (ImGui::Button(studio::localization::bilingual("Compare in separate window...", "Comparer dans une fenetre...")))
+            compare_open_ = true;
+        ImGui::SameLine();
         if (studio::TutorialWidgets::Checkbox("image_editor", "Original", &original_))
             refresh();
         ImGui::SameLine();
@@ -501,13 +622,13 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
         ImGui::SetNextItemWidth(180);
         ImGui::SliderFloat("Zoom", &zoom_, .1f, 64, "%.2fx");
         ImGui::SameLine();
-        if (ImGui::Button("Frame image (F)")) {
+        if (ImGui::Button(studio::localization::tr("Frame image (F)"))) {
             zoom_ = 1;
             pan_ = {};
         }
         ImGui::SameLine();
         studio::TutorialWidgets::Checkbox("image_editor", "Pixel grid", &grid_);
-        if (ImGui::Button("Display..."))
+        if (ImGui::Button(studio::localization::tr("Display...")))
             ImGui::OpenPopup("Image display");
         if (ImGui::BeginPopup("Image display")) {
             studio::TutorialWidgets::Checkbox("image_editor", "Checkerboard", &checker_);
@@ -563,6 +684,46 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
     } else
         ImGui::TextWrapped("Load the image library to begin.");
     ImGui::End();
+    if (compare_open_) {
+        ImGui::SetNextWindowSize(ImVec2(800, 480), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin(studio::localization::bilingual("Image comparison - Original / Modified", "Comparaison d'images - Original / Modifie"), &compare_open_)) {
+            if (document_ && selected_ < document_->catalog.images.size()) {
+                const auto &info = document_->catalog.images[selected_].info;
+                ImGui::TextUnformatted(document_->catalog.images[selected_].name.c_str());
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(150);
+                ImGui::SliderFloat("Zoom##comparison", &compare_zoom_, .2f, 6.f, "%.1fx");
+                if (compare_index_ != selected_ || !bgfx::isValid(compare_original_) || !bgfx::isValid(compare_current_)) {
+                    if (bgfx::isValid(compare_original_)) bgfx::destroy(compare_original_);
+                    if (bgfx::isValid(compare_current_)) bgfx::destroy(compare_current_);
+                    compare_original_ = compare_current_ = BGFX_INVALID_HANDLE;
+                    compare_index_ = selected_;
+                    try {
+                        compare_original_ = upload(decode_native_image(document_->original(selected_)));
+                        compare_current_ = upload(decode_native_image(document_->current(selected_)));
+                    } catch (const std::exception &e) {
+                        error_ = e.what();
+                    }
+                }
+                const float panel_width = std::max(100.f, (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * .5f);
+                auto panel = [&](const char *label, bgfx::TextureHandle texture) {
+                    ImGui::BeginChild(label, ImVec2(panel_width, 0), ImGuiChildFlags_Borders);
+                    ImGui::TextUnformatted(label);
+                    const ImVec2 avail = ImGui::GetContentRegionAvail();
+                    if (bgfx::isValid(texture) && info.width && info.height) {
+                        const float scale = std::min(avail.x / info.width, avail.y / info.height) * compare_zoom_;
+                        ImGui::Image(ImTextureID(ImGuiRenderer::image_id(texture)),
+                                     ImVec2(info.width * scale, info.height * scale));
+                    }
+                    ImGui::EndChild();
+                };
+                panel(studio::localization::bilingual("Original", "Original"), compare_original_);
+                ImGui::SameLine();
+                panel(studio::localization::bilingual("Modified", "Modifie"), compare_current_);
+            } else ImGui::TextDisabled("No image selected.");
+        }
+        ImGui::End();
+    }
     ImGui::Begin("Image properties");
     ImGui::BeginDisabled(busy);
     if (document_) {
@@ -590,7 +751,7 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
                 choose(Action::Load);
             });
         ImGui::BeginDisabled(!document_->size());
-        if (studio::TutorialWidgets::Button("image_editor", "Export game images..."))
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::tr("Export game images...")))
             choose(Action::Export);
         ImGui::EndDisabled();
         if (studio::TutorialWidgets::TreeNode("image_editor", "Scan coverage")) {
@@ -608,13 +769,56 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
         ImGui::Text("%u x %u | %s", item.info.width, item.info.height,
                     native_image_format_name(item.info.format));
         ImGui::SeparatorText("Edit image");
-        if (studio::TutorialWidgets::Button("image_editor", "Export PNG..."))
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::bilingual("Extract texture as PNG...", "Extraire la texture en PNG...")))
             choose(Action::ExportPng);
-        if (studio::TutorialWidgets::Button("image_editor", "Replace PNG...", {-1, 0}))
+        ImGui::SeparatorText(studio::localization::bilingual("Manual PNG resize", "Redimensionnement manuel du PNG"));
+        if (manual_width_ == 0 || manual_height_ == 0) {
+            manual_width_ = int(item.info.width);
+            manual_height_ = int(item.info.height);
+        }
+        ImGui::SetNextItemWidth(130.0f);
+        ImGui::InputInt(studio::localization::bilingual("Width (px)##manual-width", "Largeur (px)##manual-width"), &manual_width_);
+        ImGui::SetNextItemWidth(130.0f);
+        ImGui::InputInt(studio::localization::bilingual("Height (px)##manual-height", "Hauteur (px)##manual-height"), &manual_height_);
+        ImGui::SetNextItemWidth(260.0f);
+        ImGui::Combo("##manual-resize-filter", &manual_filter_,
+                     studio::localization::bilingual(
+                         "Nearest (sharp pixels)\0Linear (smooth)\0",
+                         "Voisin le plus proche (pixels nets)\0Linéaire (lissé)\0"));
+        ImGui::BeginDisabled(manual_width_ <= 0 || manual_height_ <= 0 ||
+                             manual_width_ > 4096 || manual_height_ > 4096);
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::bilingual(
+                "Resize and save PNG...", "Redimensionner et enregistrer le PNG...")))
+            choose(Action::ResizePng);
+        ImGui::EndDisabled();
+        ImGui::TextWrapped("%s", studio::localization::bilingual(
+            "Exports a separate resized PNG. Does not modify the game texture.",
+            "Exporte un PNG redimensionné séparé. Ne modifie pas la texture du jeu."));
+        ImGui::SeparatorText(studio::localization::bilingual("Resize on import", "Redimensionner à l'import"));
+        ImGui::Checkbox(studio::localization::bilingual(
+                            "Automatically resize PNG to texture dimensions",
+                            "Redimensionner automatiquement le PNG aux dimensions de la texture"),
+                        &auto_resize_png_);
+        if (auto_resize_png_) {
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Combo("##resize-filter", &resize_filter_,
+                         studio::localization::bilingual(
+                             "Nearest (sharp pixels)\0Linear (smooth)\0",
+                             "Voisin le plus proche (pixels nets)\0Linéaire (lissé)\0"));
+            ImGui::TextWrapped("%s: %u x %u",
+                studio::localization::bilingual("Target size", "Taille cible"),
+                item.info.width, item.info.height);
+            ImGui::TextWrapped("%s",
+                studio::localization::bilingual(
+                    "The source image is resized before conversion. Its aspect ratio may change.",
+                    "L'image source est redimensionnée avant conversion. Ses proportions peuvent changer."));
+        }
+        if (studio::TutorialWidgets::Button("image_editor", studio::localization::bilingual(
+                "Import / replace PNG...", "Importer / remplacer le PNG..."), {-1, 0}))
             choose(Action::Import);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(
-                "Use a %u x %u PNG. Colors and alpha are converted to the native format.",
+            ImGui::SetTooltip("%s %u x %u",
+                studio::localization::bilingual("Native texture size:", "Taille native de la texture :"),
                 item.info.width, item.info.height);
         ImGui::BeginDisabled(imported_.empty());
         if (studio::TutorialWidgets::Button("image_editor", "Reload last PNG"))
@@ -638,9 +842,9 @@ void ImageEditor::draw(const std::filesystem::path &dump) {
     }
     ImGui::EndDisabled();
     if (encoding_.valid())
-        ImGui::TextUnformatted("Encoding replacement image...");
+        ImGui::TextUnformatted(studio::localization::tr("Encoding replacement image..."));
     if (export_.valid())
-        ImGui::TextUnformatted("Exporting image archives...");
+        ImGui::TextUnformatted(studio::localization::tr("Exporting image archives..."));
     if (!notice_.empty())
         ImGui::TextWrapped("%s", notice_.c_str());
     if (!error_.empty()) {

@@ -1,3 +1,4 @@
+#include "native/localization.h"
 #include "native/motion_graph.h"
 #include "native/tutorial_widgets.h"
 #include "native/material_motion_editor.h"
@@ -560,7 +561,7 @@ void MaterialMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
         bool valid =
             key_frame_ >= 0 && key_frame_ <= motion.frames && (!pattern || !texture_.empty());
         ImGui::BeginDisabled(!valid);
-        if (studio::TutorialWidgets::Button("material_motion_editor", "Insert key")) {
+        if (studio::TutorialWidgets::Button("material_motion_editor", studio::localization::tr("Insert key"))) {
             auto next = motion;
             auto &target = next.tracks[track_index];
             if (pattern) {
@@ -586,7 +587,7 @@ void MaterialMotionEditor::draw(MaterialDocument &doc, ModelDocument &preview,
             apply(next);
         }
         ImGui::SameLine();
-        if (studio::TutorialWidgets::Button("material_motion_editor", "Delete key")) {
+        if (studio::TutorialWidgets::Button("material_motion_editor", studio::localization::tr("Delete key"))) {
             auto next = motion;
             auto &target = next.tracks[track_index];
             if (pattern)
