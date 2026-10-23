@@ -1,0 +1,53 @@
+
+name: Publish USUM Studio Beta 0.2
+
+on:
+  schedule:
+    - cron: "17 18 * * *"
+      timezone: "Europe/Paris"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check publication date
+        id: date
+        env:
+          RELEASE_DATE: "2026-10-28"
+        run: |
+          TODAY=$(TZ=Europe/Paris date +%Y-%m-%d)
+
+          if [[ "$TODAY" < "$RELEASE_DATE" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release date not reached."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the draft release
+        if: steps.date.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: "v0.2.0-beta"
+        run: |
+          RELEASE_ID=$(gh api \
+            "repos/$GH_REPO/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\" and .draft == true) | .id" \
+            | head -n 1)
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No matching draft release found."
+            exit 0
+          fi
+
+          gh api -X PATCH \
+            "repos/$GH_REPO/releases/$RELEASE_ID" \
+            -F draft=false \
+            -F prerelease=true
+
+          echo "USUM Studio Beta 0.2 published!"
